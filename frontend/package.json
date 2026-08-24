@@ -1,0 +1,20 @@
+{
+  "name": "northstar-file-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "framer-motion": "^12.23.12",
+    "lucide-react": "^0.468.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.2.108",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "vite": "^7.1.2"
+  }
+}

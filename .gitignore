@@ -1,0 +1,17 @@
+# Dependencies
+backend/node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# Local environment and uploads
+backend/.env
+backend/uploads/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local editor files
+.vscode/
