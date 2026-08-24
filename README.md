@@ -1,44 +1,60 @@
-# 🌟 Northstar File Studio
+# Northstar Compress PDF
 
-> A modern, full-stack PDF compression and file management application equipped with secure user authentication and Python-powered file processing.
+A browser-based PDF merger and image compression studio with a React frontend, Express backend, MongoDB storage, and optional Python desktop utility.
 
-![Node.js](https://img.shields.io/badge/Node.js-v18+-green?style=flat-square&logo=node.js)
-![React](https://img.shields.io/badge/React-Vite-blue?style=flat-square&logo=react)
-![MongoDB](https://img.shields.io/badge/MongoDB-Local%2FAtlas-brightgreen?style=flat-square&logo=mongodb)
-![Python](https://img.shields.io/badge/Python-3.x-yellow?style=flat-square&logo=python)
+## Open the output
 
----
+The application runs locally in your browser. Start MongoDB first, then open these two terminals.
 
-## ✨ Key Features
+### 1. Start the backend
 
-- 🔐 **Secure User Authentication:** Account creation and login modals integrated directly with a MongoDB backend.
-- 📄 **PDF Compression Engine:** High-efficiency PDF file size reduction driven by custom Python processing scripts (`pdf_logic.py`).
-- 🎨 **Modern UI/UX:** Clean, sleek user interface featuring interactive modal flows and responsive layouts built with React + Vite.
-- ⚡ **RESTful API Architecture:** Fast Node.js & Express server handling user sessions and file workflows.
+```powershell
+cd backend
+npm install
+npm start
+```
 
----
+The backend runs at `http://localhost:4000`.
 
-## 🛠️ Tech Stack
+### 2. Start the frontend
 
-| Domain | Technologies |
-| :--- | :--- |
-| **Frontend** | React.js (Vite), JavaScript (ES6+), HTML5, CSS3 |
-| **Backend** | Node.js, Express.js |
-| **Database** | MongoDB, Mongoose |
-| **File Engine** | Python (`pdf_logic.py`, `requirements.txt`) |
+```powershell
+cd frontend
+npm install
+npm run dev
+```
 
----
+Vite prints the browser address in the terminal. Open the displayed link, usually:
 
-## 📁 Repository Structure
+**[Open Northstar Compress PDF](http://localhost:5173/)**
 
-```text
-├── backend/            # Express REST API & MongoDB models
-│   ├── src/            # Database config, auth controllers, routes
-│   └── package.json
-├── frontend/           # React single-page client app
-│   ├── src/            # Components, modals, UI styles
-│   └── package.json
-├── main_ui.py          # Standalone desktop interface utility
-├── pdf_logic.py        # Core PDF compression logic
-├── requirements.txt    # Python library dependencies
-└── .gitignore
+If port `5173` is already being used, Vite may show `http://localhost:5174/` instead. Open the exact URL shown by Vite.
+
+## Database
+
+The backend uses MongoDB at `mongodb://localhost:27017/file_studio` by default. Copy `backend/.env.example` to `backend/.env` to customize the connection.
+
+User accounts are stored in MongoDB. Sign up or log in from the top-right corner of the app.
+
+## Features
+
+- Merge PDF files in the browser
+- Export PDF pages as JPG or PNG
+- Compress and convert images
+- Sign up and log in with MongoDB-backed accounts
+- Light and dark themes with animated interactions
+
+## Python desktop utility
+
+```powershell
+python main_ui.py
+```
+
+GitHub displays this README as project documentation. The application output opens through the local frontend URL after running the commands above. A public browser link requires deploying the frontend and backend to hosting.
+
+## Tech stack
+
+- React and Vite frontend
+- Express and Node.js backend
+- MongoDB and Mongoose database
+- Python desktop utility
