@@ -25,8 +25,7 @@ npm run dev
 ```
 
 Vite prints the browser address in the terminal. Open the displayed link, usually:
-
-**[Open Northstar Compress PDF](http://localhost:5173/)**
+**
 
 If port `5173` is already being used, Vite may show `http://localhost:5174/` instead. Open the exact URL shown by Vite.
 
