@@ -1,6 +1,10 @@
 from pathlib import Path
 
-import PyPDF2
+try:
+    import pypdf as pdf_module
+except ImportError:
+    import PyPDF2 as pdf_module
+
 from PIL import Image, UnidentifiedImageError
 
 
@@ -13,13 +17,14 @@ IMAGE_FORMATS = {
 }
 
 
-def merge_pdfs(pdf_list, output_filename="Merged_Document.pdf"):
+def merge_pdfs(pdf_list, output_filename="Merged_Document.pdf", output_dir=None):
     if not pdf_list:
         return False, "No files selected."
 
-    output_dir = Path(pdf_list[0]).parent
-    output_path = output_dir / output_filename
-    merger = PyPDF2.PdfMerger()
+    destination_dir = Path(output_dir) if output_dir else Path(pdf_list[0]).parent
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    output_path = destination_dir / output_filename
+    merger = pdf_module.PdfMerger()
 
     try:
         for pdf in pdf_list:
@@ -54,13 +59,17 @@ def convert_image(image_path, output_format="JPEG", quality=82, output_dir=None)
         with Image.open(source_path) as image:
             save_image = image.copy()
             if output_format == "JPEG" and save_image.mode not in ("RGB", "L"):
-                background = Image.new("RGB", save_image.size, "white")
-                if "A" in save_image.getbands():
-                    background.paste(save_image, mask=save_image.getchannel("A"))
+                if save_image.mode in ("RGBA", "LA") or (save_image.mode == "P" and "transparency" in save_image.info):
+                    save_image = save_image.convert("RGBA")
+                    background = Image.new("RGB", save_image.size, (255, 255, 255))
+                    if "A" in save_image.getbands():
+                        background.paste(save_image, mask=save_image.getchannel("A"))
+                    else:
+                        background.paste(save_image)
+                    save_image.close()
+                    save_image = background
                 else:
-                    background.paste(save_image)
-                save_image.close()
-                save_image = background
+                    save_image = save_image.convert("RGB")
 
             save_options = {"format": output_format}
             if output_format in ("JPEG", "WEBP"):

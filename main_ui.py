@@ -158,7 +158,7 @@ class ModernPDFMerger(ctk.CTk):
             return
         self.btn_merge.configure(text="Merging...", state="disabled")
         self.update_idletasks()
-        success, message = pdf_logic.merge_pdfs(self.pdf_files)
+        success, message = pdf_logic.merge_pdfs(self.pdf_files, output_dir=self.output_directory)
         self.btn_merge.configure(text="Merge PDFs", state="normal")
         (messagebox.showinfo if success else messagebox.showerror)("Northstar", message)
         if success:

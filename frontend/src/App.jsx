@@ -77,20 +77,15 @@ function downloadBlob(blob, filename) {
 }
 
 async function saveFileToDatabase(blob, filename, metadata) {
-  try {
-    const formData = new FormData();
-    formData.append('file', blob, filename);
-    formData.append('metadata', JSON.stringify(metadata));
-    const response = await fetch('/api/files', {
-      method: 'POST',
-      body: formData,
-    });
-    if (!response.ok) return null;
-    return await response.json();
-  } catch (err) {
-    console.warn('Database save skipped:', err);
-    return null;
-  }
+  const formData = new FormData();
+  formData.append('file', blob, filename);
+  formData.append('metadata', JSON.stringify(metadata));
+  const response = await fetch('http://localhost:4000/api/files', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) throw new Error('File could not be saved to the database');
+  return response.json();
 }
 
 function App() {
@@ -107,7 +102,8 @@ function App() {
   const [quality, setQuality] = useState(82);
   const [compressionMode, setCompressionMode] = useState('recommended');
   const [targetSize, setTargetSize] = useState(60);
-  const [targetFileSize, setTargetFileSize] = useState(60);
+  const [targetFileSize, setTargetFileSize] = useState(500);
+  const [targetUnit, setTargetUnit] = useState('KB');
   const [processing, setProcessing] = useState(false);
   const [imageProgress, setImageProgress] = useState(0);
   const [notice, setNotice] = useState(null);
@@ -153,7 +149,7 @@ function App() {
 
   const submitAuth = async () => {
     try {
-      const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+      const endpoint = authMode === 'login' ? 'http://localhost:4000/api/auth/login' : 'http://localhost:4000/api/auth/signup';
       const body = authMode === 'login'
         ? { email: authData.email, password: authData.password }
         : { name: authData.name, email: authData.email, password: authData.password };
@@ -253,9 +249,10 @@ function App() {
         outputFormat: 'PDF',
       });
       downloadBlob(blob, 'Merged_Document.pdf');
-      showNotice('Merged PDF downloaded.');
-    } catch {
-      showNotice('One of the PDFs could not be read.', 'error');
+      showNotice('Merged PDF downloaded successfully.');
+    } catch (err) {
+      console.error(err);
+      showNotice('One of the PDFs could not be processed.', 'error');
     } finally {
       setProcessing(false);
     }
@@ -273,8 +270,9 @@ function App() {
         const bitmap = await createImageBitmap(file);
         const mime = format === 'JPEG' ? 'image/jpeg' : format === 'PNG' ? 'image/png' : 'image/webp';
         const originalSize = file.size || 1;
-        const percentGoal = Math.min(99, Math.max(1, targetSize));
-        const fileGoal = Math.max(1, Number(targetFileSize || 1)) * 1024;
+        const percentGoal = Math.min(100, Math.max(1, targetSize));
+        const unitMultiplier = targetUnit === 'MB' ? 1024 * 1024 : 1024;
+        const fileGoal = Math.max(1, Number(targetFileSize || 1)) * unitMultiplier;
         const targetBytes = Math.min(originalSize * (percentGoal / 100), fileGoal);
 
         let qualityValue = Math.max(0.05, quality / 100);
@@ -327,11 +325,42 @@ function App() {
         setImageProgress(index + 1);
       }
       showNotice(`${images.length} image${images.length === 1 ? '' : 's'} downloaded.`);
-    } catch {
-      showNotice('An image could not be converted in this browser.', 'error');
+    } catch (err) {
+      console.error(err);
+      showNotice(err.message || 'An image could not be converted in this browser.', 'error');
     } finally {
       setProcessing(false);
       setImageProgress(0);
+    }
+  };
+
+  const addSamplePdf = async () => {
+    try {
+      const sampleDoc = await PDFDocument.create();
+      const page = sampleDoc.addPage([595, 842]);
+      page.drawText('Northstar File Studio - Sample Document', {
+        x: 50,
+        y: 750,
+        size: 18,
+      });
+      page.drawText(`Page created: ${new Date().toLocaleString()}`, {
+        x: 50,
+        y: 710,
+        size: 12,
+      });
+      page.drawText('This is a valid PDF generated in-browser for merging.', {
+        x: 50,
+        y: 680,
+        size: 12,
+      });
+      const pdfBytes = await sampleDoc.save();
+      const sampleBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const sampleFile = new File([sampleBlob], `Sample_${pdfs.length + 1}.pdf`, { type: 'application/pdf' });
+      setPdfs((current) => [...current, sampleFile]);
+      showNotice('Sample PDF added.');
+    } catch (err) {
+      console.error(err);
+      showNotice('Could not generate sample PDF.', 'error');
     }
   };
 
@@ -449,7 +478,7 @@ function App() {
                   {processing ? 'Processing...' : 'START'}
                 </button>
 
-                <button className="pdf-sample-button" type="button" onClick={() => setPdfs((current) => current.length ? current : [new File(['pdf sample'], 'sample.pdf', { type: 'application/pdf' })])}>
+                <button className="pdf-sample-button" type="button" onClick={addSamplePdf}>
                   + Add sample file
                 </button>
               </div>
@@ -490,7 +519,7 @@ function App() {
           ) : (
             <motion.div className="tool-panel" key="image" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
               <div className="panel-heading"><div><p className="section-kicker">IMAGES</p><h2>Prepare your images</h2><p>Convert a batch to a format that fits the next destination.</p></div><span className="count">{images.length} files</span></div>
-              <input ref={imageInput} hidden type="file" accept="*/*" multiple onChange={addImages} />
+              <input ref={imageInput} hidden type="file" accept="image/*" multiple onChange={addImages} />
               <div className="compression-panel">
                 {compressionModes.map((mode) => (
                   <motion.button
@@ -516,14 +545,23 @@ function App() {
                 ))}
 
                 <div className="compression-option compact-panel compact-row">
-                  <span className="compression-label">Target size</span>
+                  <span className="compression-label">Target file size limit</span>
                   <div className="target-size-inline">
-                    <input type="number" min="1" max="1024" value={targetFileSize} onChange={(event) => {
-                      const value = Number(event.target.value || 1);
-                      setTargetFileSize(Math.min(1024, Math.max(1, value)));
-                      setTargetSize(Math.min(99, Math.max(1, Math.round(value))));
-                    }} />
-                    <select value="KB" aria-label="Target size unit">
+                    <input
+                      type="number"
+                      min="1"
+                      max={targetUnit === 'MB' ? 100 : 10240}
+                      value={targetFileSize}
+                      onChange={(event) => {
+                        const val = Number(event.target.value);
+                        setTargetFileSize(isNaN(val) || val <= 0 ? 1 : val);
+                      }}
+                    />
+                    <select
+                      value={targetUnit}
+                      onChange={(event) => setTargetUnit(event.target.value)}
+                      aria-label="Target size unit"
+                    >
                       <option value="KB">KB</option>
                       <option value="MB">MB</option>
                     </select>
@@ -539,13 +577,9 @@ function App() {
                     <input
                       type="range"
                       min="1"
-                      max="99"
+                      max="100"
                       value={targetSize}
-                      onChange={(event) => {
-                        const nextValue = Number(event.target.value);
-                        setTargetSize(nextValue);
-                        setTargetFileSize(nextValue);
-                      }}
+                      onChange={(event) => setTargetSize(Number(event.target.value))}
                       style={{ '--percent': `${targetSize}%` }}
                     />
                     <div className="range-scale">
@@ -554,7 +588,7 @@ function App() {
                       <span>40%</span>
                       <span>60%</span>
                       <span>80%</span>
-                      <span>99%</span>
+                      <span>100%</span>
                     </div>
                   </div>
                 </div>
@@ -565,9 +599,9 @@ function App() {
                     <span className="range-value-box">{quality}%</span>
                   </div>
                   <div className="range-wrapper quality-range">
-                    <input type="range" min="0" max="100" value={quality} onChange={(event) => setQuality(Number(event.target.value))} style={{ '--percent': `${quality}%` }} />
+                    <input type="range" min="5" max="100" value={quality} onChange={(event) => setQuality(Number(event.target.value))} style={{ '--percent': `${quality}%` }} />
                     <div className="range-scale">
-                      <span>0%</span>
+                      <span>5%</span>
                       <span>20%</span>
                       <span>40%</span>
                       <span>60%</span>

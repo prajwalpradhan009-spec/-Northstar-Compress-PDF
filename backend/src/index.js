@@ -33,28 +33,34 @@ app.use('/api/auth', authRouter);
 
 app.get('/api/ping', (req, res) => res.json({ ok: true, time: Date.now() }));
 
-// Serve frontend static assets
-const distPath = path.join(__dirname, '..', '..', 'frontend', 'dist');
-const publicPath = path.join(__dirname, '..', 'public');
+// Serve frontend static assets from frontend/dist or backend/public
+const frontendDistPath = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
+const backendPublicPath = path.resolve(__dirname, '..', 'public');
 
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-} else if (fs.existsSync(publicPath)) {
-  app.use(express.static(publicPath));
+let staticPath = null;
+if (fs.existsSync(frontendDistPath)) {
+  staticPath = frontendDistPath;
+} else if (fs.existsSync(backendPublicPath)) {
+  staticPath = backendPublicPath;
 }
 
+if (staticPath) {
+  console.log(`Serving static files from: ${staticPath}`);
+  app.use(express.static(staticPath));
+}
+
+// Fallback SPA route for client-side routing
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
     return next();
   }
-  const indexPath = fs.existsSync(distPath)
-    ? path.join(distPath, 'index.html')
-    : (fs.existsSync(publicPath) ? path.join(publicPath, 'index.html') : null);
 
+  const indexPath = staticPath ? path.join(staticPath, 'index.html') : null;
   if (indexPath && fs.existsSync(indexPath)) {
     return res.sendFile(indexPath);
   }
-  res.status(200).send('Northstar Compress PDF API is running.');
+
+  res.status(200).send('Northstar Compress PDF is running.');
 });
 
 const port = process.env.PORT || 4000;
