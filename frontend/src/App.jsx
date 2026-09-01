@@ -77,15 +77,20 @@ function downloadBlob(blob, filename) {
 }
 
 async function saveFileToDatabase(blob, filename, metadata) {
-  const formData = new FormData();
-  formData.append('file', blob, filename);
-  formData.append('metadata', JSON.stringify(metadata));
-  const response = await fetch('http://localhost:4000/api/files', {
-    method: 'POST',
-    body: formData,
-  });
-  if (!response.ok) throw new Error('File could not be saved to the database');
-  return response.json();
+  try {
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+    formData.append('metadata', JSON.stringify(metadata));
+    const response = await fetch('/api/files', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err) {
+    console.warn('Database save skipped:', err);
+    return null;
+  }
 }
 
 function App() {
@@ -148,7 +153,7 @@ function App() {
 
   const submitAuth = async () => {
     try {
-      const endpoint = authMode === 'login' ? 'http://localhost:4000/api/auth/login' : 'http://localhost:4000/api/auth/signup';
+      const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
       const body = authMode === 'login'
         ? { email: authData.email, password: authData.password }
         : { name: authData.name, email: authData.email, password: authData.password };
