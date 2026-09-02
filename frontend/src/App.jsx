@@ -9,6 +9,7 @@ const imageTypes = 'image/jpeg,image/png,image/webp,image/bmp,image/tiff';
 const outputTypes = ['JPEG', 'PNG', 'WEBP'];
 const pdfOutputTypes = ['PDF', 'JPG', 'PNG', 'PPT'];
 const pdfImageMimeTypes = { JPG: 'image/jpeg', PNG: 'image/png' };
+const API_BASE = import.meta.env.VITE_API_URL || '';
 const compressionModes = [
   {
     id: 'recommended',
@@ -80,7 +81,7 @@ async function saveFileToDatabase(blob, filename, metadata) {
   const formData = new FormData();
   formData.append('file', blob, filename);
   formData.append('metadata', JSON.stringify(metadata));
-  const response = await fetch('http://localhost:4000/api/files', {
+  const response = await fetch(`${API_BASE}/api/files`, {
     method: 'POST',
     body: formData,
   });
@@ -97,6 +98,7 @@ function App() {
   const [authMode, setAuthMode] = useState('login');
   const [authOpen, setAuthOpen] = useState(false);
   const [authData, setAuthData] = useState({ name: '', email: '', password: '' });
+  const [authLoading, setAuthLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [pdfFormat, setPdfFormat] = useState('PDF');
   const [quality, setQuality] = useState(82);
@@ -118,14 +120,20 @@ function App() {
     const savedToken = localStorage.getItem('northstar_token');
     if (!savedToken) return;
 
-    const savedUser = localStorage.getItem('northstar_user');
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch {
+    fetch(`${API_BASE}/api/auth/me`, { headers: { Authorization: `Bearer ${savedToken}` } })
+      .then(async (response) => {
+        if (response.status === 401) throw new Error('Session is no longer valid.');
+        if (!response.ok) return;
+        const result = await response.json();
+        setUser(result.user);
+        localStorage.setItem('northstar_user', JSON.stringify(result.user));
+      })
+      .catch((error) => {
+        if (error.message !== 'Session is no longer valid.') return;
+        localStorage.removeItem('northstar_token');
         localStorage.removeItem('northstar_user');
-      }
-    }
+        setUser(null);
+      });
   }, []);
 
   const showNotice = (message, kind = 'success') => {
@@ -148,8 +156,10 @@ function App() {
   };
 
   const submitAuth = async () => {
+    if (authLoading) return;
+    setAuthLoading(true);
     try {
-      const endpoint = authMode === 'login' ? 'http://localhost:4000/api/auth/login' : 'http://localhost:4000/api/auth/signup';
+      const endpoint = authMode === 'login' ? `${API_BASE}/api/auth/login` : `${API_BASE}/api/auth/signup`;
       const body = authMode === 'login'
         ? { email: authData.email, password: authData.password }
         : { name: authData.name, email: authData.email, password: authData.password };
@@ -172,7 +182,9 @@ function App() {
       setAuthData({ name: '', email: '', password: '' });
       showNotice(authMode === 'login' ? 'Signed in successfully.' : 'Account created successfully.');
     } catch (error) {
-      showNotice(error.message || 'Authentication failed.', 'error');
+      showNotice(error instanceof TypeError ? 'Cannot reach the server. Start the backend and MongoDB, then try again.' : error.message || 'Authentication failed.', 'error');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -433,8 +445,8 @@ function App() {
                   <input name="password" type="password" value={authData.password} onChange={handleAuthInput} placeholder="At least 6 characters" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength="6" required />
                 </label>
 
-                <button className="primary-button auth-submit" type="submit">
-                  {authMode === 'login' ? 'Log in' : 'Create account'}
+                <button className="primary-button auth-submit" type="submit" disabled={authLoading}>
+                  {authLoading ? 'Checking...' : authMode === 'login' ? 'Log in' : 'Create account'}
                 </button>
               </form>
             </motion.div>

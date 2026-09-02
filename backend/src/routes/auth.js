@@ -9,6 +9,15 @@ const JWT_SECRET = process.env.JWT_SECRET || 'northstar-secret-key';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function getToken(req) {
+  const header = req.get('authorization') || '';
+  return header.startsWith('Bearer ') ? header.slice(7) : null;
+}
+
+function publicUser(user) {
+  return { id: user._id, name: user.name, email: user.email };
+}
+
 function checkDbReady(res) {
   if (mongoose.connection.readyState !== 1) {
     res.status(503).json({ error: 'Database is currently offline. Please ensure MongoDB is connected.' });
@@ -58,11 +67,7 @@ router.post('/signup', async (req, res) => {
 
     return res.status(201).json({
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      },
+      user: publicUser(user),
     });
   } catch (error) {
     console.error('Signup error:', error);
@@ -95,15 +100,32 @@ router.post('/login', async (req, res) => {
 
     return res.json({
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      },
+      user: publicUser(user),
     });
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({ error: 'Unable to log in.' });
+  }
+});
+
+router.get('/me', async (req, res) => {
+  try {
+    if (!checkDbReady(res)) return;
+
+    const token = getToken(req);
+    if (!token) return res.status(401).json({ error: 'Authentication required.' });
+
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(payload.id);
+    if (!user) return res.status(401).json({ error: 'Account no longer exists.' });
+
+    return res.json({ user: publicUser(user) });
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Your session has expired. Please sign in again.' });
+    }
+    console.error('Session verification error:', error);
+    return res.status(500).json({ error: 'Unable to verify session.' });
   }
 });
 
