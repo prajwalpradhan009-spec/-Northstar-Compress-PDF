@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, ArrowDown, ArrowUp, Check, ChevronDown, FilePlus2, FileText, ImagePlus, Moon, Sun, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, ArrowDown, ArrowUp, Check, ChevronDown, Eye, EyeOff, FilePlus2, FileText, ImagePlus, Moon, Sun, Trash2, Upload, X } from 'lucide-react';
 import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -99,6 +99,7 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authData, setAuthData] = useState({ name: '', email: '', password: '' });
   const [authLoading, setAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [user, setUser] = useState(null);
   const [pdfFormat, setPdfFormat] = useState('PDF');
   const [quality, setQuality] = useState(82);
@@ -442,7 +443,12 @@ function App() {
 
                 <label>
                   <span>Password</span>
-                  <input name="password" type="password" value={authData.password} onChange={handleAuthInput} placeholder="At least 6 characters" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength="6" required />
+                  <span className="password-field">
+                    <input name="password" type={showPassword ? 'text' : 'password'} value={authData.password} onChange={handleAuthInput} placeholder="At least 6 characters" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength="6" required />
+                    <button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}>
+                      {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </span>
                 </label>
 
                 <button className="primary-button auth-submit" type="submit" disabled={authLoading}>

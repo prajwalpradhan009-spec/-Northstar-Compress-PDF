@@ -38,6 +38,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @keyframes field-reveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .auth-form input { height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--auth-control); color: var(--ink); transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; }
 .auth-form input:focus { outline: none; border-color: #4dccaa; background: rgba(77, 204, 170, .08); box-shadow: 0 0 0 3px rgba(77, 204, 170, .14); }
+.password-field { position: relative; display: block; }
+.password-field input { width: 100%; padding-right: 46px; }
+.password-toggle { position: absolute; top: 50%; right: 10px; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; transform: translateY(-50%); }
+.password-toggle:hover, .password-toggle:focus-visible { color: var(--ink); background: rgba(77, 204, 170, .12); }
 .auth-submit { width: 100%; border-radius: 10px; animation: field-reveal .4s .15s both; transition: transform .2s ease, box-shadow .2s ease, background .2s ease; }
 .auth-submit:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(77, 204, 170, .2); }
 .intro, .studio { max-width: 1180px; margin-left: auto; margin-right: auto; }
