@@ -2,9 +2,9 @@
 
 A browser-based PDF merger and image compression studio with a React frontend, Express backend, MongoDB storage, and optional Python desktop utility.
 
-## Open the output
+## Run locally
 
-The application runs locally in your browser. Start MongoDB first, then open these two terminals.
+Start MongoDB first, then open two terminals.
 
 ### 1. Start the backend
 
@@ -25,15 +25,46 @@ npm run dev
 ```
 
 Vite prints the browser address in the terminal. Open the displayed link, usually:
-**
+`http://localhost:5173`
 
 If port `5173` is already being used, Vite may show `http://localhost:5174/` instead. Open the exact URL shown by Vite.
 
-## Database
+## Environment variables
 
-The backend uses MongoDB at `mongodb://localhost:27017/file_studio` by default. Copy `backend/.env.example` to `backend/.env` to customize the connection.
+For local development, copy `backend/.env.example` to `backend/.env` and set the values:
 
-User accounts are stored in MongoDB. Sign up or log in from the top-right corner of the app.
+```env
+MONGODB_URI=mongodb://localhost:27017/file_studio
+JWT_SECRET=replace-with-a-long-random-secret
+PORT=4000
+```
+
+The `backend/.env` file is ignored by Git. Never commit database passwords or JWT secrets.
+
+## Deploy with Render and MongoDB Atlas
+
+The repository includes the frontend production files in `backend/public`, so one Render web service can serve the website and API.
+
+Create a Render Web Service connected to this repository with:
+
+- **Root Directory:** leave blank
+- **Build Command:** `npm run build`
+- **Start Command:** `npm start`
+
+Add these Render environment variables:
+
+```env
+MONGODB_URI=mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/DATABASE_NAME
+JWT_SECRET=your-long-random-secret
+```
+
+Do not include `MONGODB_URI=` inside the value field. In MongoDB Atlas, add the Render connection to the project's Network Access list. For initial testing, `0.0.0.0/0` allows connections from Render, but a restricted network policy is preferred when possible.
+
+After deployment, the Render logs should contain `Connected to MongoDB`. The live application is then available at the Render service URL.
+
+## Database and authentication
+
+User accounts are stored in MongoDB Atlas in the `users` collection. Passwords are hashed with bcrypt. Sign up or log in from the top-right corner of the app. Sessions use JWT tokens and are checked against the database when the site is reopened.
 
 ## Features
 
@@ -48,8 +79,6 @@ User accounts are stored in MongoDB. Sign up or log in from the top-right corner
 ```powershell
 python main_ui.py
 ```
-
-GitHub displays this README as project documentation. The application output opens through the local frontend URL after running the commands above. A public browser link requires deploying the frontend and backend to hosting.
 
 ## Tech stack
 
