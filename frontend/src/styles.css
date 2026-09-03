@@ -162,8 +162,9 @@ input[type='range'] { width: 100%; accent-color: #42c5a2; }
 .conversion-progress { height: 3px; margin-top: 14px; overflow: hidden; background: var(--line); }
 .conversion-progress span { display: block; height: 100%; background: linear-gradient(90deg, #35b894, #f3b562); transition: width .25s ease; }
 .empty-state { display: grid; place-items: center; min-height: 150px; border: 1px dashed var(--line); color: var(--muted); font-size: 13px; }
-.notice { position: fixed; right: 25px; bottom: 25px; display: flex; align-items: center; gap: 16px; padding: 14px 17px; color: #092019; background: #55d2ad; box-shadow: 0 12px 35px rgba(0,0,0,.2); font-size: 13px; font-weight: 700; }
-.notice.error { color: #fff; background: #bc6262; }
+.notice { position: fixed; right: 25px; bottom: 25px; z-index: 20; display: flex; align-items: center; gap: 12px; max-width: min(430px, calc(100vw - 32px)); padding: 15px 17px; color: #092019; background: #55d2ad; border: 1px solid rgba(9, 32, 25, .18); box-shadow: 0 12px 35px rgba(0,0,0,.2); font-size: 13px; font-weight: 700; line-height: 1.4; }
+.notice.error { color: #fff; background: #9f2430; border: 2px solid #ffb4bb; box-shadow: 0 0 0 4px rgba(159, 36, 48, .24), 0 14px 35px rgba(0,0,0,.35); font-size: 14px; }
+.notice.error span { flex: 1; }
 .notice button { display: grid; place-items: center; padding: 0; border: 0; color: inherit; background: transparent; }
 footer { max-width: 1180px; margin: 26px auto 0; font-size: 10px; }
 footer span { margin: 0 8px; }

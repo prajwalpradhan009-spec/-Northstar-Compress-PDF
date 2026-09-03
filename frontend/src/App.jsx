@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, ArrowUp, Check, ChevronDown, FilePlus2, FileText, ImagePlus, Moon, Sun, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, ArrowDown, ArrowUp, Check, ChevronDown, FilePlus2, FileText, ImagePlus, Moon, Sun, Trash2, Upload, X } from 'lucide-react';
 import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -633,7 +633,7 @@ function App() {
         </AnimatePresence>
       </section>
 
-      <AnimatePresence>{notice && <motion.div className={`notice ${notice.kind}`} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 15 }} onAnimationComplete={() => setTimeout(() => setNotice(null), 2600)}>{notice.message}<button onClick={() => setNotice(null)} aria-label="Dismiss notification"><X size={15} /></button></motion.div>}</AnimatePresence>
+      <AnimatePresence>{notice && <motion.div className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'} aria-live="polite" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 15 }} onAnimationComplete={() => setTimeout(() => setNotice(null), 2600)}>{notice.kind === 'error' && <AlertCircle size={20} strokeWidth={2.5} aria-hidden="true" />}<span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Dismiss notification"><X size={17} /></button></motion.div>}</AnimatePresence>
       <footer>PRIVATE BY DEFAULT <span>•</span> YOUR FILES STAY IN THIS BROWSER</footer>
     </main>
   );
