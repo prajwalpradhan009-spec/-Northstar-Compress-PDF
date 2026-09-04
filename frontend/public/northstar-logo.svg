@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="105 30 150 150" role="img" aria-labelledby="title desc">
+  <title id="title">Northstar File Studio</title>
+  <desc id="desc">PDF document icon above the Northstar File Studio name</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a2830"/>
+      <stop offset="1" stop-color="#102f37"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="360" height="360" rx="18" fill="url(#bg)"/>
+  <g opacity=".16" stroke="#42bfd1" stroke-width="1">
+    <path d="M0 40h360M0 80h360M0 120h360M0 160h360M0 200h360M0 240h360M0 280h360M0 320h360"/>
+    <path d="M40 0v360M80 0v360M120 0v360M160 0v360M200 0v360M240 0v360M280 0v360M320 0v360"/>
+  </g>
+  <circle cx="180" cy="105" r="69" fill="none" stroke="#00bfd0" stroke-width="2" filter="url(#glow)"/>
+  <path d="M142 53h56l25 25v72h-81z" fill="#f6f7f5"/>
+  <path d="M198 53v25h25" fill="#aeb8bd"/>
+  <rect x="149" y="101" width="74" height="39" rx="4" fill="#f15d49"/>
+  <text x="186" y="129" fill="#fff" font-family="Arial,sans-serif" font-size="25" font-weight="700" text-anchor="middle">PDF</text>
+  <text x="180" y="194" fill="#f5f8f3" font-family="Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="2" text-anchor="middle">NORTHSTAR</text>
+  <text x="180" y="218" fill="#f15d49" font-family="Arial,sans-serif" font-size="13" font-weight="700" letter-spacing="3" text-anchor="middle">FILE STUDIO</text>
+  <g fill="none" stroke="#00bfd0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M143 260h10l5 5v11h-15zM153 260v5h5M148 271v-7M145 268l3-3 3 3"/>
+    <rect x="174" y="260" width="14" height="15" rx="1"/><circle cx="178" cy="264" r="1.5"/><path d="m175 273 4-4 3 3 2-2"/>
+    <path d="M215 260v13M210 269l5 5 5-5M208 278h14"/>
+  </g>
+</svg>

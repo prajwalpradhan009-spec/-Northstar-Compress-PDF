@@ -102,7 +102,7 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [user, setUser] = useState(null);
   const [pdfFormat, setPdfFormat] = useState('PDF');
-  const [quality, setQuality] = useState(82);
+  const [quality, setQuality] = useState(95);
   const [compressionMode, setCompressionMode] = useState('recommended');
   const [targetSize, setTargetSize] = useState(60);
   const [targetFileSize, setTargetFileSize] = useState(500);
@@ -171,7 +171,13 @@ function App() {
         body: JSON.stringify(body),
       });
 
-      const result = await response.json();
+      const responseText = await response.text();
+      let result = {};
+      try {
+        result = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error(response.ok ? 'The server returned an invalid response.' : 'The backend server is not available. Start the backend and try again.');
+      }
       if (!response.ok) {
         throw new Error(result.error || 'Authentication failed');
       }
@@ -288,7 +294,8 @@ function App() {
         const fileGoal = Math.max(1, Number(targetFileSize || 1)) * unitMultiplier;
         const targetBytes = Math.min(originalSize * (percentGoal / 100), fileGoal);
 
-        let qualityValue = Math.max(0.05, quality / 100);
+        const requestedQuality = compressionMode === 'lossless' ? 1 : Math.max(0.85, quality / 100);
+        let qualityValue = requestedQuality;
         let width = bitmap.width;
         let height = bitmap.height;
         let blob = null;
@@ -298,19 +305,22 @@ function App() {
           canvas.width = width;
           canvas.height = height;
           const context = canvas.getContext('2d');
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = 'high';
           context.drawImage(bitmap, 0, 0, width, height);
 
-          blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, qualityValue));
+          blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, format === 'PNG' ? undefined : qualityValue));
           if (!blob) break;
           if (blob.size <= targetBytes) break;
 
-          if (format === 'PNG') {
+          if (compressionMode !== 'extreme') {
+            break;
+          } else if (format === 'PNG' || qualityValue <= 0.85) {
             const scale = Math.max(0.55, Math.sqrt(targetBytes / blob.size));
             width = Math.max(64, Math.floor(width * scale));
             height = Math.max(64, Math.floor(height * scale));
-            qualityValue = Math.max(0.1, qualityValue * 0.9);
           } else {
-            qualityValue = Math.max(0.05, qualityValue * 0.8);
+            qualityValue = Math.max(0.85, qualityValue - 0.05);
           }
         }
 
@@ -318,8 +328,10 @@ function App() {
           const fallbackCanvas = document.createElement('canvas');
           fallbackCanvas.width = bitmap.width;
           fallbackCanvas.height = bitmap.height;
-          fallbackCanvas.getContext('2d').drawImage(bitmap, 0, 0);
-          blob = await new Promise((resolve) => fallbackCanvas.toBlob(resolve, mime, 0.1));
+          const fallbackContext = fallbackCanvas.getContext('2d');
+          fallbackContext.imageSmoothingQuality = 'high';
+          fallbackContext.drawImage(bitmap, 0, 0);
+          blob = await new Promise((resolve) => fallbackCanvas.toBlob(resolve, mime, format === 'PNG' ? undefined : requestedQuality));
         }
 
         if (!blob) throw new Error('Image export failed');
@@ -380,7 +392,7 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">N</span><span>NORTHSTAR</span></div>
+        <div className="brand"><img className="brand-logo" src="/northstar-logo.svg" alt="Northstar File Studio" /><span>NORTHSTAR</span></div>
         <div className="header-actions">
           <button className="icon-button" onClick={() => setDarkMode((value) => !value)} aria-label="Toggle color theme" title="Toggle color theme">
             {darkMode ? <Sun size={18} /> : <Moon size={18} />}
@@ -539,12 +551,16 @@ function App() {
               <div className="panel-heading"><div><p className="section-kicker">IMAGES</p><h2>Prepare your images</h2><p>Convert a batch to a format that fits the next destination.</p></div><span className="count">{images.length} files</span></div>
               <input ref={imageInput} hidden type="file" accept="image/*" multiple onChange={addImages} />
               <div className="compression-panel">
-                {compressionModes.map((mode) => (
+                {compressionModes.map((mode, index) => (
                   <motion.button
                     key={mode.id}
                     type="button"
                     layout
-                    whileTap={{ scale: 0.99 }}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    whileHover={{ y: -3, transition: { duration: 0.2 } }}
+                    whileTap={{ scale: 0.985 }}
+                    transition={{ duration: 0.42, delay: index * 0.08, ease: 'easeOut' }}
                     className={`compression-option ${compressionMode === mode.id ? 'active' : ''}`}
                     onClick={() => setCompressionMode(mode.id)}
                     aria-pressed={compressionMode === mode.id}
@@ -630,8 +646,8 @@ function App() {
                 </div>
               </div>
 
-              <div className="image-tools footer-row"><SourcePicker inputRef={imageInput} label="Choose images" disabled={processing} onCloudSource={showCloudNotice} /><div className="format-picker" role="group" aria-label="Output format"><span>Format</span><div className="format-buttons">{outputTypes.map((type) => <button key={type} className={format === type ? 'format-button selected' : 'format-button'} onClick={() => setFormat(type)} aria-pressed={format === type} disabled={processing}>{type === 'JPEG' ? 'JPG' : type}</button>)}</div></div></div>
-              <div className="image-list">{images.length ? images.map(({ file, id }) => <div className="file-row" key={id}><ImagePlus className="file-icon" size={20} /><span className="file-name">{file.name}</span><span className="file-size" title={`Exact size: ${exactFileSize(file.size)}`}><strong>{formatBytes(file.size)}</strong><small>{exactFileSize(file.size)}</small></span><button className="row-button danger" onClick={() => setImages((current) => current.filter((item) => item.id !== id))} aria-label={`Remove ${file.name}`}><X size={15} /></button></div>) : <div className="empty-state">No images selected yet.</div>}</div>
+              <div className="image-tools footer-row"><div className="format-picker" role="group" aria-label="Output format"><span>Format</span><div className="format-buttons">{outputTypes.map((type) => <motion.button key={type} type="button" whileTap={{ scale: 0.94 }} className={format === type ? 'format-button selected' : 'format-button'} onClick={() => setFormat(type)} aria-pressed={format === type} disabled={processing}>{format === type && <motion.span className="format-selection" layoutId="format-selection" transition={{ type: 'spring', stiffness: 420, damping: 30 }} /> }<span className="format-label">{type === 'JPEG' ? 'JPG' : type}</span></motion.button>)}</div></div></div>
+              <div className="image-list"><div className="pdf-upload-card image-upload-card" onClick={() => imageInput.current?.click()}><div className="upload-icon-wrap"><ImagePlus size={54} /></div><div className="upload-text">Drop images here or click to upload</div><button type="button" className="pdf-select-button" onClick={(event) => { event.stopPropagation(); imageInput.current?.click(); }}><Upload size={18} /> Choose images</button></div>{images.length > 0 && <div className="selected-images">{images.map(({ file, id }) => <div className="file-row" key={id}><ImagePlus className="file-icon" size={20} /><span className="file-name">{file.name}</span><span className="file-size" title={`Exact size: ${exactFileSize(file.size)}`}><strong>{formatBytes(file.size)}</strong><small>{exactFileSize(file.size)}</small></span><button className="row-button danger" onClick={() => setImages((current) => current.filter((item) => item.id !== id))} aria-label={`Remove ${file.name}`}><X size={15} /></button></div>)}</div>}</div>
               <div className="action-bar image-action-bar"><span>{processing ? `Converting image ${imageProgress + 1} of ${images.length}...` : "Exports are downloaded to your browser's download folder."}</span><button className="primary-button" onClick={processImages} disabled={processing}>{processing ? <><span className="loading-spinner" aria-hidden="true" /> Converting...</> : <><Check size={17} /> Convert images</>}</button></div>
               {processing && <div className="conversion-progress" role="progressbar" aria-label="Image conversion progress" aria-valuemin="0" aria-valuemax={images.length} aria-valuenow={imageProgress}><span style={{ width: `${(imageProgress / images.length) * 100}%` }} /></div>}
             </motion.div>
