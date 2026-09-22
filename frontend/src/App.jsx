@@ -860,7 +860,7 @@ const runExtract = async () => {
       <Reveal as="section" className="studio" aria-label="Northstar studio">
         <nav className="tabs" aria-label="Main tools">
           <button className={activeTab === 'tools' ? 'tab active' : 'tab'} onClick={() => openTab('tools')}><FileText size={17} /> PDF tools</button>
-          <button className={activeTab === 'image' ? 'tab active' : 'tab'} onClick={() => openTab('image')}><ImagePlus size={17} /> Image studio{!user && <span className="tab-lock"><Lock size={9} /> Login required</span>}</button>
+          <button className={activeTab === 'image' ? 'tab active' : 'tab'} onClick={() => openTab('image')}><ImagePlus size={17} /> Image studio{!user && <span className="tab-lock"><Lock size={9} /><span className="tab-lock-text">Login required</span></span>}</button>
           <button className={activeTab === 'ai' ? 'tab active' : 'tab'} onClick={() => openTab('ai')}><Sparkles size={17} /> Northstar AI</button>
           <button className={activeTab === 'dashboard' ? 'tab active' : 'tab'} onClick={() => openTab('dashboard')}><LayoutDashboard size={17} /> Dashboard</button>
         </nav>
