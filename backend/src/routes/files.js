@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const File = require('../models/File');
+const { requireAuth, getToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -45,6 +46,17 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     const publicPath = `/uploads/${path.basename(file.path)}`;
 
+    let ownerId = null;
+    try {
+      const token = getToken(req);
+      if (token) {
+        const payload = require('jsonwebtoken').verify(token, process.env.JWT_SECRET || 'northstar-secret-key');
+        ownerId = payload.id;
+      }
+    } catch {
+      ownerId = null;
+    }
+
     if (!isDbReady()) {
       return res.status(201).json({
         originalName: file.originalname,
@@ -62,6 +74,9 @@ router.post('/', upload.single('file'), async (req, res) => {
       size: file.size,
       path: publicPath,
       metadata,
+      user: ownerId || undefined,
+      operation: metadata.operation || undefined,
+      status: metadata.status || 'Completed',
     });
     await doc.save();
     res.status(201).json(doc);
@@ -76,7 +91,15 @@ router.get('/', async (req, res) => {
     if (!isDbReady()) {
       return res.json([]);
     }
-    const docs = await File.find().sort({ createdAt: -1 }).limit(100);
+    const { owned } = req.query;
+    let query = {};
+    if (owned === 'true') {
+      const token = getToken(req);
+      if (!token) return res.status(401).json({ error: 'Authentication required.' });
+      const payload = require('jsonwebtoken').verify(token, process.env.JWT_SECRET || 'northstar-secret-key');
+      query = { user: payload.id };
+    }
+    const docs = await File.find(query).sort({ createdAt: -1 }).limit(100);
     res.json(docs);
   } catch (err) {
     console.error('Fetch files error:', err);

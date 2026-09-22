@@ -1,10 +1,20 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0c1718" />
+    <meta name="theme-color" content="#0a1211" />
     <title>Northstar | File Studio</title>
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('northstar_theme');
+          var dark = saved ? saved === 'dark' : true;
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0a1211' : '#eef4f1');
+        } catch (e) { /* localStorage unavailable */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
