@@ -1,11 +1,17 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'northstar-secret-key';
+const RESET_CODE_TTL_MS = 30 * 60 * 1000;
+
+function hashResetCode(code) {
+  return crypto.createHash('sha256').update(String(code).trim()).digest('hex');
+}
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -105,6 +111,67 @@ router.post('/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({ error: 'Unable to log in.' });
+  }
+});
+
+router.post('/forgot-password', async (req, res) => {
+  try {
+    if (!checkDbReady(res)) return;
+
+    const { email } = req.body;
+    if (!email || !emailRegex.test(String(email).trim())) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.json({ ok: true });
+    }
+
+    const resetCode = crypto.randomBytes(32).toString('hex');
+    user.passwordResetToken = hashResetCode(resetCode);
+    user.passwordResetExpires = new Date(Date.now() + RESET_CODE_TTL_MS);
+    await user.save();
+
+    console.log(`Password reset code for ${user.email}: ${resetCode}`);
+
+    return res.json({ ok: true, resetCode });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return res.status(500).json({ error: 'Unable to process the request.' });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    if (!checkDbReady(res)) return;
+
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Reset code and a new password are required.' });
+    }
+
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    }
+
+    const user = await User.findOne({ passwordResetToken: hashResetCode(token) });
+    if (!user || !user.passwordResetExpires || user.passwordResetExpires.getTime() < Date.now()) {
+      return res.status(400).json({ error: 'This reset code is invalid or has expired. Request a new one.' });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    await user.save();
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({ error: 'Unable to reset the password.' });
   }
 });
 

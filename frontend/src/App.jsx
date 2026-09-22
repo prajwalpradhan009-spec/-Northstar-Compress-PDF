@@ -167,6 +167,7 @@ function App() {
   const [authData, setAuthData] = useState({ name: '', email: '', password: '' });
   const [authLoading, setAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [resetCode, setResetCode] = useState('');
   const [user, setUser] = useState(null);
 
   // Shared single-PDF workspace
@@ -275,10 +276,21 @@ function App() {
     if (authLoading) return;
     setAuthLoading(true);
     try {
-      const endpoint = authMode === 'login' ? `${API_BASE}/api/auth/login` : `${API_BASE}/api/auth/signup`;
-      const body = authMode === 'login'
-        ? { email: authData.email, password: authData.password }
-        : { name: authData.name, email: authData.email, password: authData.password };
+      let endpoint;
+      let body;
+      if (authMode === 'login') {
+        endpoint = `${API_BASE}/api/auth/login`;
+        body = { email: authData.email, password: authData.password };
+      } else if (authMode === 'signup') {
+        endpoint = `${API_BASE}/api/auth/signup`;
+        body = { name: authData.name, email: authData.email, password: authData.password };
+      } else if (authMode === 'forgot') {
+        endpoint = `${API_BASE}/api/auth/forgot-password`;
+        body = { email: authData.email };
+      } else {
+        endpoint = `${API_BASE}/api/auth/reset-password`;
+        body = { token: resetCode.trim(), password: authData.password };
+      }
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -293,12 +305,28 @@ function App() {
       }
       if (!response.ok) throw new Error(result.error || 'Authentication failed');
 
-      localStorage.setItem('northstar_token', result.token);
-      localStorage.setItem('northstar_user', JSON.stringify(result.user));
-      setUser(result.user);
-      setAuthOpen(false);
-      setAuthData({ name: '', email: '', password: '' });
-      showNotice(authMode === 'login' ? 'Signed in successfully.' : 'Account created successfully.');
+      if (authMode === 'login' || authMode === 'signup') {
+        localStorage.setItem('northstar_token', result.token);
+        localStorage.setItem('northstar_user', JSON.stringify(result.user));
+        setUser(result.user);
+        setAuthOpen(false);
+        setAuthData({ name: '', email: '', password: '' });
+        setResetCode('');
+        showNotice(authMode === 'login' ? 'Signed in successfully.' : 'Account created successfully.');
+      } else if (authMode === 'forgot') {
+        if (result.resetCode) {
+          setResetCode(result.resetCode);
+          setAuthMode('reset');
+          showNotice('Reset code ready — enter it below to set a new password.');
+        } else {
+          showNotice('If an account exists for that email, a reset code has been generated.', 'error');
+        }
+      } else {
+        setAuthData({ name: '', email: '', password: '' });
+        setResetCode('');
+        setAuthMode('login');
+        showNotice('Password updated. Log in with your new password.');
+      }
     } catch (error) {
       showNotice(error instanceof TypeError ? 'Cannot reach the server. Start the backend and MongoDB, then try again.' : error.message || 'Authentication failed.', 'error');
     } finally {
@@ -1167,15 +1195,17 @@ const runExtract = async () => {
             <motion.div className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" initial={{ y: 18, opacity: 0, scale: 0.98 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 18, opacity: 0, scale: 0.98 }} onClick={(event) => event.stopPropagation()}>
               <div className="auth-header">
                 <div>
-                  <h3 id="auth-title">{authMode === 'login' ? 'Welcome back' : 'Create account'}</h3>
-                  <p className="auth-subtitle">{authMode === 'login' ? 'Access your Northstar workspace.' : 'Save files, history, and usage to your private dashboard.'}</p>
+                  <h3 id="auth-title">{authMode === 'forgot' ? 'Reset your password' : authMode === 'reset' ? 'Enter reset code' : authMode === 'login' ? 'Welcome back' : 'Create account'}</h3>
+                  <p className="auth-subtitle">{authMode === 'forgot' ? 'Enter your account email to receive a reset code.' : authMode === 'reset' ? 'Use the code to set a new password. It expires in 30 minutes.' : authMode === 'login' ? 'Access your Northstar workspace.' : 'Save files, history, and usage to your private dashboard.'}</p>
                 </div>
                 <button className="close-auth" onClick={() => setAuthOpen(false)} aria-label="Close authentication dialog"><X size={16} /></button>
               </div>
-              <div className="auth-switch">
-                <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>Log in</button>
-                <button className={authMode === 'signup' ? 'active' : ''} onClick={() => setAuthMode('signup')}>Sign up</button>
-              </div>
+              {(authMode === 'login' || authMode === 'signup') && (
+                <div className="auth-switch">
+                  <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>Log in</button>
+                  <button className={authMode === 'signup' ? 'active' : ''} onClick={() => setAuthMode('signup')}>Sign up</button>
+                </div>
+              )}
               <form className="auth-form" onSubmit={(event) => { event.preventDefault(); submitAuth(); }}>
                 {authMode === 'signup' && (
                   <label>
@@ -1187,18 +1217,32 @@ const runExtract = async () => {
                   <span>Email</span>
                   <input name="email" type="email" value={authData.email} onChange={handleAuthInput} placeholder="you@example.com" autoComplete="email" required />
                 </label>
-                <label>
-                  <span>Password</span>
-                  <span className="password-field">
-                    <input name="password" type={showPassword ? 'text' : 'password'} value={authData.password} onChange={handleAuthInput} placeholder="At least 6 characters" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength="6" required />
-                    <button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}>
-                      {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-                    </button>
-                  </span>
-                </label>
+                {authMode !== 'forgot' && (
+                  <label>
+                    <span>Password</span>
+                    <span className="password-field">
+                      <input name="password" type={showPassword ? 'text' : 'password'} value={authData.password} onChange={handleAuthInput} placeholder={authMode === 'reset' ? 'New password — 6+ characters' : 'At least 6 characters'} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength="6" required />
+                      <button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}>
+                        {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </span>
+                  </label>
+                )}
+                {authMode === 'reset' && (
+                  <label>
+                    <span>Reset code</span>
+                    <input name="resetCode" type="text" value={resetCode} onChange={(event) => setResetCode(event.target.value)} placeholder="Paste the reset code" autoComplete="one-time-code" required />
+                  </label>
+                )}
                 <button className="primary-button auth-submit" type="submit" disabled={authLoading}>
-                  {authLoading ? 'Checking...' : authMode === 'login' ? 'Log in' : 'Create account'}
+                  {authLoading ? 'Please wait...' : authMode === 'login' ? 'Log in' : authMode === 'signup' ? 'Create account' : authMode === 'forgot' ? 'Send reset code' : 'Set new password'}
                 </button>
+                {authMode === 'login' && (
+                  <button className="forgot-link" type="button" onClick={() => { setResetCode(''); setAuthMode('forgot'); }}>Forgot password?</button>
+                )}
+                {(authMode === 'forgot' || authMode === 'reset') && (
+                  <button className="forgot-link" type="button" onClick={() => { setResetCode(''); setAuthData((current) => ({ ...current, password: '' })); setAuthMode('login'); }}>← Back to log in</button>
+                )}
               </form>
             </motion.div>
           </motion.div>

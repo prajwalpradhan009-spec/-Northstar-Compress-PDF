@@ -229,6 +229,19 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 }
 .auth-submit:hover { transform: translateY(-2px); filter: brightness(1.05); box-shadow: 0 16px 30px rgba(14, 165, 124, .34); }
 .auth-submit:active { transform: translateY(0) scale(.99); }
+.forgot-link {
+  display: block;
+  margin: 10px auto 0;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 600 12px 'DM Mono', monospace;
+  text-align: center;
+  cursor: pointer;
+  transition: color .15s ease;
+}
+.forgot-link:hover { color: var(--accent-strong); }
 
 /* ---------- Hero ---------- */
 .intro, .studio { width: 100%; max-width: var(--page-width); margin-left: auto; margin-right: auto; }
