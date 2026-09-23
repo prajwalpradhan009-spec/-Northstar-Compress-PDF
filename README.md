@@ -1,14 +1,43 @@
 # Northstar Compress PDF
 
-A browser-based PDF merger and image compression studio with a React frontend, Express backend, MongoDB storage, and optional Python desktop utility.
+A browser-based PDF merger and image compression studio. Built with a React frontend, Express + MongoDB backend with JWT authentication, and an optional Python desktop utility.
+
+## Features
+
+- Merge multiple PDF files in the browser
+- Export PDF pages as JPG or PNG
+- Compress and convert images
+- Sign up / log in with MongoDB-backed accounts (bcrypt hashed passwords, JWT sessions)
+- Forgot-password reset flow with one-time codes
+- Light and dark themes with animated interactions
+- Responsive and mobile-friendly UI
+- Optional Python desktop utility for offline use
+
+## Tech stack
+
+- **Frontend:** React 19, Vite, pdf-lib, pdfjs-dist, Tesseract.js, Framer Motion, lucide-react
+- **Backend:** Node.js, Express, Mongoose, JWT, bcryptjs, Multer, MongoDB
+- **Desktop utility:** Python (CustomTkinter, PyPDF2, Pillow)
+
+## Project structure
+
+```
+.
+├── frontend/        # React + Vite web app
+├── backend/         # Express + MongoDB API server
+│   └── public/      # Built frontend assets (served by the backend)
+├── main_ui.py       # Python desktop utility
+├── pdf_logic.py     # Python PDF processing logic
+└── requirements.txt # Python dependencies
+```
 
 ## Run locally
 
-Start MongoDB first, then open two terminals.
+Start MongoDB first, then run the backend and frontend in two terminals.
 
-### 1. Start the backend
+### 1. Backend
 
-```powershell
+```shell
 cd backend
 npm install
 npm start
@@ -16,22 +45,19 @@ npm start
 
 The backend runs at `http://localhost:4000`.
 
-### 2. Start the frontend
+### 2. Frontend
 
-```powershell
+```shell
 cd frontend
 npm install
 npm run dev
 ```
 
-Vite prints the browser address in the terminal. Open the displayed link, usually:
-`http://localhost:5173`
-
-If port `5173` is already being used, Vite may show `http://localhost:5174/` instead. Open the exact URL shown by Vite.
+Vite prints the browser address in the terminal, usually `http://localhost:5173`. If that port is taken, Vite will show the next available one (e.g. `http://localhost:5174`) — open the exact URL shown.
 
 ## Environment variables
 
-For local development, copy `backend/.env.example` to `backend/.env` and set the values:
+Copy `backend/.env.example` to `backend/.env` and set the values:
 
 ```env
 MONGODB_URI=mongodb://localhost:27017/file_studio
@@ -39,11 +65,11 @@ JWT_SECRET=replace-with-a-long-random-secret
 PORT=4000
 ```
 
-The `backend/.env` file is ignored by Git. Never commit database passwords or JWT secrets.
+`backend/.env` is Git-ignored. Never commit database credentials or JWT secrets.
 
-## Deploy with Render and MongoDB Atlas
+## Deploy on Render with MongoDB Atlas
 
-The repository includes the frontend production files in `backend/public`, so one Render web service can serve the website and API.
+The repository includes production frontend files in `backend/public`, so a single Render Web Service serves both the website and the API.
 
 Create a Render Web Service connected to this repository with:
 
@@ -58,31 +84,21 @@ MONGODB_URI=mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/DATABASE_NAME
 JWT_SECRET=your-long-random-secret
 ```
 
-Do not include `MONGODB_URI=` inside the value field. In MongoDB Atlas, add the Render connection to the project's Network Access list. For initial testing, `0.0.0.0/0` allows connections from Render, but a restricted network policy is preferred when possible.
+Do not include `MONGODB_URI=` inside the value field. In MongoDB Atlas, add the Render service to the project's Network Access list. For quick testing, `0.0.0.0/0` allows connections from Render, but a restricted network policy is preferred.
 
-After deployment, the Render logs should contain `Connected to MongoDB`. The live application is then available at the Render service URL.
+After deploying, the Render logs should contain `Connected to MongoDB`, and the app is live at the Render service URL.
 
 ## Database and authentication
 
-User accounts are stored in MongoDB Atlas in the `users` collection. Passwords are hashed with bcrypt. Sign up or log in from the top-right corner of the app. Sessions use JWT tokens and are checked against the database when the site is reopened.
-
-## Features
-
-- Merge PDF files in the browser
-- Export PDF pages as JPG or PNG
-- Compress and convert images
-- Sign up and log in with MongoDB-backed accounts
-- Light and dark themes with animated interactions
+User accounts are stored in the `users` collection in MongoDB. Passwords are hashed with bcrypt. Sign up or log in from the top-right corner of the app. Sessions use JWT tokens and are re-validated against the database when the site is reopened.
 
 ## Python desktop utility
 
-```powershell
+```shell
+pip install -r requirements.txt
 python main_ui.py
 ```
 
-## Tech stack
+## License
 
-- React and Vite frontend
-- Express and Node.js backend
-- MongoDB and Mongoose database
-- Python desktop utility
+Private project. All rights reserved.
