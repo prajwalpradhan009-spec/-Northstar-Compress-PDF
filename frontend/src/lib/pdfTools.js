@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
+import { PDFDocument, degrees } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
@@ -101,15 +101,6 @@ export function parseRanges(input, pageCount) {
   return [...result].sort((a, b) => a - b);
 }
 
-export async function extractPages(bytes, pages) {
-  const source = await PDFDocument.load(bytes, { ignoreEncryption: true });
-  const out = await PDFDocument.create();
-  const indices = pages.map((p) => p - 1).filter((i) => i >= 0 && i < source.getPageCount());
-  const copied = await out.copyPages(source, indices);
-  copied.forEach((page) => out.addPage(page));
-  return out.save();
-}
-
 export async function splitPdf(bytes, pages) {
   const source = await PDFDocument.load(bytes, { ignoreEncryption: true, throwOnInvalidObject: false, capNumbers: true, updateMetadata: false });
   if (!pages || !pages.length) return [];
@@ -135,22 +126,6 @@ export async function splitPdf(bytes, pages) {
     results.push({ bytes: await doc.save(), pages: group });
   }
   return results;
-}
-
-export async function rotatePdf(bytes, rotations) {
-  const source = await PDFDocument.load(bytes, { ignoreEncryption: true });
-  const out = await PDFDocument.create();
-  const indices = [];
-  const angles = [];
-  rotations.forEach((r) => {
-    if (r.rotate !== 0) {
-      indices.push(r.page - 1);
-      angles.push(normalizeRotation(r.rotate));
-    }
-  });
-  const copied = await out.copyPages(source, indices);
-  copied.forEach((page, i) => page.setRotation(degrees(angles[i])));
-  return out.save();
 }
 
 export async function buildPdfFromWorkspace(bytes, pageModels, { onlySelected = false } = {}) {
@@ -237,23 +212,23 @@ export async function imagesToPdf(files, { pageSize = 'auto', margin = 0, orient
     if (!pngBlob) throw new Error('Image encoding failed.');
     const embedded = await doc.embedPng(new Uint8Array(await pngBlob.arrayBuffer()));
 
-    const sizes = { A4: [595.28, 841.89], Letter: [612, 792] };
-    const [pw, ph] = sizes[pageSize] || [embedded.width, embedded.height];
     let page = null;
     if (pageSize === 'auto') {
       page = doc.addPage([Math.max(1, embedded.width + margin * 2), Math.max(1, embedded.height + margin * 2)]);
       page.drawImage(embedded, { x: margin, y: margin });
     } else {
-      const drawW = Math.max(1, pw - margin * 2);
-      const drawH = Math.max(1, ph - margin * 2);
+      const sizes = { A4: [595.28, 841.89], Letter: [612, 792] };
+      const [pw, ph] = sizes[pageSize] || [embedded.width, embedded.height];
+      const landscape = (orientation === 'landscape') || (orientation === 'auto' && pw > ph);
+      const pageW = landscape ? Math.max(pw, ph) : Math.min(pw, ph);
+      const pageH = landscape ? Math.min(pw, ph) : Math.max(pw, ph);
+      const drawW = Math.max(1, pageW - margin * 2);
+      const drawH = Math.max(1, pageH - margin * 2);
       const fit = Math.min(drawW / embedded.width, drawH / embedded.height);
       const w = embedded.width * fit;
       const h = embedded.height * fit;
-      let useLandscape = pw < ph;
-      if (orientation !== 'auto') useLandscape = orientation === 'landscape';
-      const [fw, fh] = useLandscape ? [Math.max(pw, ph), Math.min(pw, ph)] : [pw, ph];
-      page = doc.addPage([fh, fw]);
-      page.drawImage(embedded, { x: (fw - w) / 2, y: (fh - h) / 2, width: w, height: h });
+      page = doc.addPage([pageW, pageH]);
+      page.drawImage(embedded, { x: (pageW - w) / 2, y: (pageH - h) / 2, width: w, height: h });
     }
   }
   return doc.save();
@@ -342,5 +317,3 @@ export async function protectPdf(bytes, { userPassword = '', ownerPassword = '',
   });
   return doc.save();
 }
-
-export { StandardFonts, rgb, degrees };

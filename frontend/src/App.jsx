@@ -174,13 +174,8 @@ function App() {
   const [headerHidden, setHeaderHidden] = useState(false);
 
   useEffect(() => {
-    const mobile = window.matchMedia('(max-width: 760px)');
     let lastY = window.scrollY;
     const onScroll = () => {
-      if (!mobile.matches) {
-        setHeaderHidden(false);
-        return;
-      }
       const y = window.scrollY;
       if (y > 80 && y > lastY) setHeaderHidden(true);
       else if (y < lastY) setHeaderHidden(false);
@@ -247,7 +242,6 @@ function App() {
 
   const tool = pdfTools.find((item) => item.id === pdfTool);
   const fileNameBase = useMemo(() => (wFile?.name ? wFile.name.replace(/\.[^.]+$/, '') : 'document'), [wFile]);
-  const pageCount = useMemo(() => (wPages ? wPages.filter((p) => !p.deleted).length : 0), [wPages]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
@@ -761,10 +755,16 @@ const runExtract = async () => {
       <header className={`topbar${headerHidden ? ' topbar-hidden' : ''}`}>
         <div className="topbar-inner">
           <div className="brand">
-            <picture>
-              <source srcSet="/northstar-logo.png" type="image/png" />
-              <img className="brand-logo" src="/northstar-logo.png" alt="Northstar — PDF tools, image studio, and document AI" />
-            </picture>
+            {user ? (
+              <span className="brand-logo brand-logo-letter">
+                {(user.name || '').trim().charAt(0).toUpperCase() || 'N'}
+              </span>
+            ) : (
+              <picture>
+                <source srcSet="/northstar-logo.png" type="image/png" />
+                <img className="brand-logo" src="/northstar-logo.png" alt="Northstar — PDF tools, image studio, and document AI" />
+              </picture>
+            )}
             <span>NORTHSTAR</span>
           </div>
           <div className="header-actions">

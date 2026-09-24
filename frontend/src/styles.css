@@ -112,24 +112,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   align-items: center;
   gap: 18px;
   padding: 9px 14px 9px 18px;
-  border: 1px solid var(--line);
   border-radius: 17px;
   background: var(--surface);
   box-shadow: 0 18px 46px rgba(20, 58, 48, .12);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   transition: border-color .3s ease, background .3s ease, box-shadow .3s ease;
-}
-.topbar-inner::before {
-  position: absolute;
-  top: -1px;
-  left: 14%;
-  right: 14%;
-  height: 1px;
-  content: '';
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  pointer-events: none;
-  opacity: .7;
 }
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .brand { display: flex; align-items: center; gap: 11px; font: 700 12px 'DM Mono', monospace; letter-spacing: .14em; }
@@ -143,6 +131,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   transition: transform .25s ease, box-shadow .25s ease, filter .25s ease;
 }
 .brand-logo:hover { transform: translateY(-2px) scale(1.03); filter: brightness(1.08); box-shadow: 0 0 0 6px rgba(46, 230, 171, .16); }
+.brand-logo-letter { display: grid; place-items: center; color: #062018; background: linear-gradient(135deg, #2ee6ab, #17b98c); font-size: 24px; font-weight: 800; font-family: 'DM Mono', monospace; }
 .brand-mark { display: grid; place-items: center; width: 27px; height: 27px; color: #062018; background: linear-gradient(135deg, #2ee6ab, #17b98c); font-weight: 800; border-radius: 7px; animation: mark-pop .6s .15s both; }
 @keyframes mark-pop { from { opacity: 0; transform: scale(.6) rotate(-12deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
 
