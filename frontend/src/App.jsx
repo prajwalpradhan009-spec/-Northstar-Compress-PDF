@@ -610,7 +610,7 @@ const runExtract = async () => {
       showNotice('OCR complete — text downloaded.');
     } catch (err) {
       console.error(err);
-      showNotice('OCR failed. A network connection is needed to load the OCR engine.', 'error');
+      showNotice('OCR failed. The OCR engine is downloaded from multiple content-delivery networks — check your network connection, then try again.', 'error');
       recordActivity('ocr-pdf', wFile?.name || 'pdf', 'Failed');
     } finally {
       setProcessing(false);

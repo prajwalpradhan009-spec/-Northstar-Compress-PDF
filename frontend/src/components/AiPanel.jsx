@@ -106,7 +106,7 @@ function AiPanel({ notify }) {
       notify('OCR complete. Text downloaded as a .txt file.');
     } catch (err) {
       console.error(err);
-      notify('OCR failed to run. Check your network connection for the OCR engine.', 'error');
+      notify('OCR failed to run. The OCR engine is downloaded from multiple content-delivery networks — check your network connection, then try again.', 'error');
     } finally {
       setBusy(false);
     }
