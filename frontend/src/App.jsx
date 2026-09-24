@@ -22,6 +22,8 @@ import Avatar from './components/Avatar';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
 const pdfTools = [
   { id: 'merge', label: 'Merge PDF', icon: Merge, kind: 'merge', desc: 'Combine two or more files into one document' },
   { id: 'compress', label: 'Compress PDF', icon: Package, kind: 'single', desc: 'Rebuild pages to shrink file size' },
@@ -169,6 +171,24 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [resetCode, setResetCode] = useState('');
   const [user, setUser] = useState(null);
+  const [headerHidden, setHeaderHidden] = useState(false);
+
+  useEffect(() => {
+    const mobile = window.matchMedia('(max-width: 760px)');
+    let lastY = window.scrollY;
+    const onScroll = () => {
+      if (!mobile.matches) {
+        setHeaderHidden(false);
+        return;
+      }
+      const y = window.scrollY;
+      if (y > 80 && y > lastY) setHeaderHidden(true);
+      else if (y < lastY) setHeaderHidden(false);
+      lastY = y;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Shared single-PDF workspace
   const [wFile, setWFile] = useState(null);
@@ -239,6 +259,14 @@ function App() {
   useEffect(() => {
     const savedToken = localStorage.getItem('northstar_token');
     if (!savedToken) return;
+    const cachedUser = localStorage.getItem('northstar_user');
+    if (cachedUser) {
+      try {
+        setUser(JSON.parse(cachedUser));
+      } catch {
+        localStorage.removeItem('northstar_user');
+      }
+    }
     fetch(`${API_BASE}/api/auth/me`, { headers: { Authorization: `Bearer ${savedToken}` } })
       .then(async (response) => {
         if (response.status === 401) throw new Error('Session is no longer valid.');
@@ -276,6 +304,9 @@ function App() {
     if (authLoading) return;
     setAuthLoading(true);
     try {
+      if ((authMode === 'signup' || authMode === 'reset') && !STRONG_PASSWORD_REGEX.test(authData.password)) {
+        throw new Error('Use a strong password: at least 8 characters, including uppercase, lowercase, a number, and a symbol like @ # $.');
+      }
       let endpoint;
       let body;
       if (authMode === 'login') {
@@ -314,12 +345,12 @@ function App() {
         setResetCode('');
         showNotice(authMode === 'login' ? 'Signed in successfully.' : 'Account created successfully.');
       } else if (authMode === 'forgot') {
-        if (result.resetCode) {
-          setResetCode(result.resetCode);
+        if (result.emailed) {
+          setResetCode('');
           setAuthMode('reset');
-          showNotice('Reset code ready — enter it below to set a new password.');
+          showNotice('Reset code sent! Check your inbox and enter it below.');
         } else {
-          showNotice('If an account exists for that email, a reset code has been generated.', 'error');
+          showNotice('No account found for that email. Check the address and try again.', 'error');
         }
       } else {
         setAuthData({ name: '', email: '', password: '' });
@@ -727,7 +758,7 @@ const runExtract = async () => {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
+      <header className={`topbar${headerHidden ? ' topbar-hidden' : ''}`}>
         <div className="topbar-inner">
           <div className="brand">
             <picture>
@@ -1221,7 +1252,7 @@ const runExtract = async () => {
                   <label>
                     <span>Password</span>
                     <span className="password-field">
-                      <input name="password" type={showPassword ? 'text' : 'password'} value={authData.password} onChange={handleAuthInput} placeholder={authMode === 'reset' ? 'New password — 6+ characters' : 'At least 6 characters'} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength="6" required />
+                      <input name="password" type={showPassword ? 'text' : 'password'} value={authData.password} onChange={handleAuthInput} placeholder={authMode === 'reset' ? 'New password — strong (8+ chars, @ # $, A-Z, a-z, 0-9)' : 'Strong password — 8+ chars with @ # $, A-Z, a-z, 0-9'} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength="8" required />
                       <button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}>
                         {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                       </button>

@@ -24,7 +24,7 @@ function ImageStudio({ user, notify }) {
   const [quality, setQuality] = useState(95);
   const [compressionMode, setCompressionMode] = useState('recommended');
   const [targetSize, setTargetSize] = useState(60);
-  const [targetFileSize, setTargetFileSize] = useState(500);
+  const [targetFileSize, setTargetFileSize] = useState('500');
   const [targetUnit, setTargetUnit] = useState('KB');
   const [resizeType, setResizeType] = useState('percent');
   const [percent, setPercent] = useState(100);
@@ -49,7 +49,11 @@ function ImageStudio({ user, notify }) {
 
   const mimeFor = (type) => (type === 'JPEG' ? 'image/jpeg' : type === 'PNG' ? 'image/png' : 'image/webp');
 
-  const unitBytesOf = (amount, unit) => Math.max(1, Number(amount) || 1) * (unit === 'MB' ? 1024 * 1024 : 1024);
+  const unitBytesOf = (amount, unit) => {
+    const n = Number(amount);
+    if (!isFinite(n) || n <= 0) return 0;
+    return n * (unit === 'MB' ? 1024 * 1024 : 1024);
+  };
 
   const encodeCanvas = (bitmap, w, h, mime, quality) =>
     new Promise((resolve) => {
@@ -64,9 +68,34 @@ function ImageStudio({ user, notify }) {
       canvas.toBlob((out) => resolve(out), mime, quality);
     });
 
+  const decodeImage = async (file) => {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      const url = URL.createObjectURL(file);
+      try {
+        return await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error(`The image "${file.name || 'image'}" could not be decoded.`));
+          img.src = url;
+        });
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+  };
+
+const sanitizeSizeInput = (raw) => {
+    let s = String(raw).replace(/[^\d.]/g, '');
+    const firstDot = s.indexOf('.');
+    if (firstDot !== -1) s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, '');
+    return s;
+  };
+
   const targetSizeField = () => (
     <div className="target-size-inline">
-      <input type="number" min="1" max={targetUnit === 'MB' ? 100 : 10240} value={targetFileSize} onChange={(event) => { const val = Number(event.target.value); setTargetFileSize(isNaN(val) || val <= 0 ? 1 : val); }} />
+      <input type="text" inputMode="decimal" value={targetFileSize} onChange={(event) => setTargetFileSize(sanitizeSizeInput(event.target.value))} />
       <select value={targetUnit} onChange={(event) => setTargetUnit(event.target.value)} aria-label="Target size unit"><option value="KB">KB</option><option value="MB">MB</option></select>
     </div>
   );
@@ -169,10 +198,13 @@ function ImageStudio({ user, notify }) {
     try {
       for (let i = 0; i < images.length; i += 1) {
         const { file, id } = images[i];
-        const bitmap = await createImageBitmap(file);
+        const bitmap = await decodeImage(file);
         const originalSize = file.size || 1;
         const percentGoal = Math.min(100, Math.max(1, targetSize));
         const targetBytes = Math.min(originalSize * (percentGoal / 100), unitBytesOf(targetFileSize, targetUnit));
+        if (!isFinite(targetBytes) || targetBytes < 1) {
+          throw new Error('Enter a valid target file size limit in KB or MB (for example 100 KB or 0.5 MB).');
+        }
         const maxQuality = compressionMode === 'lossless' ? 1 : Math.min(1, Math.max(0.55, quality / 100));
 
         const { blob, width, height } = await compressToTarget(bitmap, mime, targetBytes, {
@@ -208,9 +240,12 @@ function ImageStudio({ user, notify }) {
     const extension = format.toLowerCase().replace('jpeg', 'jpg');
     const targetBytes = resizeType === 'size' ? unitBytesOf(targetFileSize, targetUnit) : null;
     try {
+      if (targetBytes != null && (!isFinite(targetBytes) || targetBytes < 1)) {
+        throw new Error('Enter a valid maximum file size in KB or MB (for example 100 KB or 0.5 MB).');
+      }
       for (let i = 0; i < images.length; i += 1) {
         const { file, id } = images[i];
-        const bitmap = await createImageBitmap(file);
+        const bitmap = await decodeImage(file);
         let w = bitmap.width;
         let h = bitmap.height;
         let blob = null;

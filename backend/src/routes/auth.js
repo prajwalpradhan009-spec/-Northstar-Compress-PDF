@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { sendResetEmail } = require('../lib/mailer');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'northstar-secret-key';
@@ -14,6 +15,8 @@ function hashResetCode(code) {
 }
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+const STRONG_PASSWORD_ERROR = 'Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol like @ # $.';
 
 function getToken(req) {
   const header = req.get('authorization') || '';
@@ -53,8 +56,8 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'Please provide a valid email address.' });
     }
 
-    if (String(password).length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    if (!STRONG_PASSWORD_REGEX.test(String(password))) {
+      return res.status(400).json({ error: STRONG_PASSWORD_ERROR });
     }
 
     const existingUser = await User.findOne({ email: normalizedEmail });
@@ -127,17 +130,31 @@ router.post('/forgot-password', async (req, res) => {
     const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
-      return res.json({ ok: true });
+      return res.json({ ok: true, emailed: false });
     }
 
     const resetCode = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + RESET_CODE_TTL_MS);
     user.passwordResetToken = hashResetCode(resetCode);
-    user.passwordResetExpires = new Date(Date.now() + RESET_CODE_TTL_MS);
+    user.passwordResetExpires = expiresAt;
     await user.save();
 
-    console.log(`Password reset code for ${user.email}: ${resetCode}`);
+    let emailed = false;
+    let emailError = '';
+    try {
+      emailed = await sendResetEmail({ to: user.email, resetCode, expiresAt });
+    } catch (error) {
+      emailError = error.message || 'Unknown SMTP error';
+      console.error('Failed to send reset email:', emailError);
+    }
 
-    return res.json({ ok: true, resetCode });
+    if (!emailed) {
+      return res.status(500).json({
+        error: `Your reset code was not emailed because sending failed. ${emailError || 'Check SMTP_USER/SMTP_PASS in backend/.env.'}`,
+      });
+    }
+
+    return res.json({ ok: true, emailed: true });
   } catch (error) {
     console.error('Forgot password error:', error);
     return res.status(500).json({ error: 'Unable to process the request.' });
@@ -154,8 +171,8 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Reset code and a new password are required.' });
     }
 
-    if (String(password).length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    if (!STRONG_PASSWORD_REGEX.test(String(password))) {
+      return res.status(400).json({ error: STRONG_PASSWORD_ERROR });
     }
 
     const user = await User.findOne({ passwordResetToken: hashResetCode(token) });
