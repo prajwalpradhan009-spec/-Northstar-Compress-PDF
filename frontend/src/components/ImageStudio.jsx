@@ -36,6 +36,7 @@ function ImageStudio({ user, notify }) {
   const [margin, setMargin] = useState(24);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [results, setResults] = useState({});
   const inputRef = useRef(null);
 
   const addImages = (event) => {
@@ -48,78 +49,136 @@ function ImageStudio({ user, notify }) {
 
   const mimeFor = (type) => (type === 'JPEG' ? 'image/jpeg' : type === 'PNG' ? 'image/png' : 'image/webp');
 
+  const unitBytesOf = (amount, unit) => Math.max(1, Number(amount) || 1) * (unit === 'MB' ? 1024 * 1024 : 1024);
+
+  const encodeCanvas = (bitmap, w, h, mime, quality) =>
+    new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w));
+      canvas.height = Math.max(1, Math.round(h));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(null);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((out) => resolve(out), mime, quality);
+    });
+
+  const targetSizeField = () => (
+    <div className="target-size-inline">
+      <input type="number" min="1" max={targetUnit === 'MB' ? 100 : 10240} value={targetFileSize} onChange={(event) => { const val = Number(event.target.value); setTargetFileSize(isNaN(val) || val <= 0 ? 1 : val); }} />
+      <select value={targetUnit} onChange={(event) => setTargetUnit(event.target.value)} aria-label="Target size unit"><option value="KB">KB</option><option value="MB">MB</option></select>
+    </div>
+  );
+
+  // Iterative/binary-search compressor: finds the highest quality that fits the
+  // target size, and only when quality alone is not enough shinks the dimensions
+  // (preserving aspect ratio) while re-running the quality search at each size.
+  const compressToTarget = async (bitmap, mime, targetBytes, opts = {}) => {
+    const supportsQuality = mime !== 'image/png';
+    const minQualityIdx = Math.max(0.05, Math.min(0.9, Number(opts.minQuality) || 0.35));
+    const maxQualityIdx = Math.max(minQualityIdx, Number(opts.maxQuality) || 0.95);
+    const originalW = Math.max(1, Math.round(bitmap.width));
+    const originalH = Math.max(1, Math.round(bitmap.height));
+    const ratio = originalW / originalH;
+    const dimsAt = (scale) => ({
+      w: Math.max(1, Math.round(originalW * scale)),
+      h: Math.max(1, Math.round((originalW * scale) / ratio)),
+    });
+
+    const qualitySearch = async (w, h) => {
+      if (!supportsQuality) {
+        const blob = await encodeCanvas(bitmap, w, h, mime, undefined);
+        return blob && blob.size <= targetBytes ? { blob, quality: 1, width: w, height: h } : null;
+      }
+      let best = null;
+      let low = minQualityIdx;
+      let high = maxQualityIdx;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const q = (low + high) / 2;
+        const blob = await encodeCanvas(bitmap, w, h, mime, q);
+        if (!blob) continue;
+        if (blob.size <= targetBytes) {
+          best = { blob, quality: q, width: w, height: h };
+          low = q;
+        } else {
+          high = q;
+        }
+      }
+      return best;
+    };
+
+    const full = await qualitySearch(originalW, originalH);
+    if (full) return full;
+
+    let fit = null;
+    let fitScale = 0;
+    let noFitScale = 1;
+    let scale = 1;
+    for (let step = 0; step < 24; step += 1) {
+      const { w, h } = dimsAt(scale);
+      const probe = await encodeCanvas(bitmap, w, h, mime, supportsQuality ? minQualityIdx : undefined);
+      if (!probe) break;
+      if (probe.size <= targetBytes) {
+        fit = (await qualitySearch(w, h)) || { blob: probe, quality: minQualityIdx, width: w, height: h };
+        fitScale = scale;
+        break;
+      }
+      noFitScale = scale;
+      const factor = Math.min(0.92, Math.max(0.6, Math.sqrt(targetBytes / Math.max(1, probe.size))));
+      scale *= factor;
+      if (dimsAt(scale).w < 1 || dimsAt(scale).h < 1) break;
+    }
+
+    if (fit && fitScale > 0) {
+      let low = fitScale;
+      let high = noFitScale;
+      let prev = null;
+      for (let step = 0; step < 8; step += 1) {
+        const mid = (low + high) / 2;
+        const { w, h } = dimsAt(mid);
+        if (prev && Math.abs(w - prev.w) <= 1 && Math.abs(h - prev.h) <= 1) break;
+        prev = { w, h };
+        const probe = await encodeCanvas(bitmap, w, h, mime, supportsQuality ? minQualityIdx : undefined);
+        if (!probe) break;
+        if (probe.size <= targetBytes) {
+          const attempt = await qualitySearch(w, h);
+          if (attempt) {
+            fit = attempt;
+            low = mid;
+          } else {
+            high = mid;
+          }
+        } else {
+          high = mid;
+        }
+      }
+      return fit;
+    }
+
+    const tiny = dimsAt(0);
+    const blob = await encodeCanvas(bitmap, tiny.w, tiny.h, mime, supportsQuality ? minQualityIdx : undefined);
+    return { blob, quality: minQualityIdx, width: tiny.w, height: tiny.h };
+  };
+
   const processConvert = async () => {
     if (!images.length) return notify('Choose one or more images first.', 'error');
     setProcessing(true);
     setProgress(0);
     const mime = mimeFor(format);
-    const supportsQuality = format !== 'PNG';
-    const baseQuality = compressionMode === 'lossless' ? 1 : Math.min(1, Math.max(0.55, quality / 100));
-    const minQuality = 0.55;
-
-    const write = (bitmap, width, height, q) =>
-      new Promise((resolve) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.floor(width));
-        canvas.height = Math.max(1, Math.floor(height));
-        const ctx = canvas.getContext('2d');
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((out) => resolve(out), mime, supportsQuality ? q : undefined);
-      });
-
-    const converge = async (bitmap, width, height, targetBytes) => {
-      let w = width;
-      let h = height;
-      let best = null;
-      let last = null;
-
-      if (supportsQuality) {
-        let low = minQuality;
-        let high = Math.max(low, baseQuality);
-        for (let attempt = 0; attempt < 14; attempt += 1) {
-          const blob = await write(bitmap, w, h, (low + high) / 2);
-          if (!blob) break;
-          if (blob.size <= targetBytes) {
-            best = blob;
-            low = (low + high) / 2;
-          } else {
-            high = (low + high) / 2;
-          }
-        }
-        if (best) return { blob: best, width: w, height: h };
-      } else {
-        const blob = await write(bitmap, w, h, 1);
-        if (blob && blob.size <= targetBytes) return { blob, width: w, height: h };
-        last = blob;
-      }
-
-      let size = best ? best.size : last?.size || Number.MAX_VALUE;
-      for (let attempt = 0; attempt < 16; attempt += 1) {
-        const factor = Math.max(0.6, Math.sqrt(targetBytes / Math.max(1, size)));
-        w = Math.max(64, Math.floor(w * factor));
-        h = Math.max(64, Math.floor(h * factor));
-        const blob = await write(bitmap, w, h, 0.85);
-        if (!blob) break;
-        if (blob.size <= targetBytes) return { blob, width: w, height: h };
-        size = blob.size;
-        last = blob;
-      }
-      return { blob: last, width: w, height: h };
-    };
-
     try {
       for (let i = 0; i < images.length; i += 1) {
-        const { file } = images[i];
+        const { file, id } = images[i];
         const bitmap = await createImageBitmap(file);
         const originalSize = file.size || 1;
         const percentGoal = Math.min(100, Math.max(1, targetSize));
-        const unitMultiplier = targetUnit === 'MB' ? 1024 * 1024 : 1024;
-        const fileGoal = Math.max(1, Number(targetFileSize || 1)) * unitMultiplier;
-        const targetBytes = Math.min(originalSize * (percentGoal / 100), fileGoal);
+        const targetBytes = Math.min(originalSize * (percentGoal / 100), unitBytesOf(targetFileSize, targetUnit));
+        const maxQuality = compressionMode === 'lossless' ? 1 : Math.min(1, Math.max(0.55, quality / 100));
 
-        const { blob } = await converge(bitmap, bitmap.width, bitmap.height, targetBytes);
+        const { blob, width, height } = await compressToTarget(bitmap, mime, targetBytes, {
+          minQuality: 0.35,
+          maxQuality: mime === 'image/png' ? 1 : maxQuality,
+        });
         if (!blob) throw new Error('Image export failed');
 
         const extension = format.toLowerCase().replace('jpeg', 'jpg');
@@ -127,6 +186,7 @@ function ImageStudio({ user, notify }) {
         if (user) await saveFileToDatabase(blob, outputName, { operation: 'convert', sourceFile: file.name, outputFormat: format, quality }).catch(() => {});
         recordActivity('convert', file.name);
         downloadBlob(blob, outputName);
+        setResults((current) => ({ ...current, [id]: { targetBytes, actualSize: blob.size, width, height } }));
         setProgress(i + 1);
       }
       notify(`${images.length} image${images.length === 1 ? '' : 's'} downloaded.`);
@@ -146,54 +206,60 @@ function ImageStudio({ user, notify }) {
     setProgress(0);
     const mime = mimeFor(format);
     const extension = format.toLowerCase().replace('jpeg', 'jpg');
+    const targetBytes = resizeType === 'size' ? unitBytesOf(targetFileSize, targetUnit) : null;
     try {
       for (let i = 0; i < images.length; i += 1) {
-        const { file } = images[i];
+        const { file, id } = images[i];
         const bitmap = await createImageBitmap(file);
         let w = bitmap.width;
         let h = bitmap.height;
-        if (resizeType === 'percent') {
-          const factor = Math.max(1, Number(percent) || 100) / 100;
-          w = Math.max(1, Math.round(w * factor));
-          h = Math.max(1, Math.round(h * factor));
+        let blob = null;
+        if (targetBytes != null) {
+          const out = await compressToTarget(bitmap, mime, targetBytes, {
+            minQuality: 0.35,
+            maxQuality: format === 'PNG' ? 1 : 0.95,
+          });
+          blob = out.blob;
+          w = out.width;
+          h = out.height;
         } else {
-          const targetW = Number(width) || 0;
-          const targetH = Number(height) || 0;
-          if (targetW || targetH) {
-            if (keepAspect) {
-              const ratio = bitmap.width / bitmap.height;
-              if (targetW && !targetH) {
-                w = targetW;
-                h = Math.max(1, Math.round(targetW / ratio));
-              } else if (targetH && !targetW) {
-                h = targetH;
-                w = Math.max(1, Math.round(targetH * ratio));
+          if (resizeType === 'percent') {
+            const factor = Math.max(1, Number(percent) || 100) / 100;
+            w = Math.max(1, Math.round(w * factor));
+            h = Math.max(1, Math.round(h * factor));
+          } else {
+            const targetW = Number(width) || 0;
+            const targetH = Number(height) || 0;
+            if (targetW || targetH) {
+              if (keepAspect) {
+                const ratio = bitmap.width / bitmap.height;
+                if (targetW && !targetH) {
+                  w = targetW;
+                  h = Math.max(1, Math.round(targetW / ratio));
+                } else if (targetH && !targetW) {
+                  h = targetH;
+                  w = Math.max(1, Math.round(targetH * ratio));
+                } else {
+                  w = targetW;
+                  h = targetH;
+                }
               } else {
-                w = targetW;
-                h = targetH;
+                w = targetW || bitmap.width;
+                h = targetH || bitmap.height;
               }
-            } else {
-              w = targetW || bitmap.width;
-              h = targetH || bitmap.height;
             }
           }
+          blob = await encodeCanvas(bitmap, w, h, mime, format === 'PNG' ? undefined : 0.94);
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(bitmap, 0, 0, w, h);
-        const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, format === 'PNG' ? undefined : 0.94));
         if (!blob) throw new Error('Resize failed.');
         const outputName = `${file.name.replace(/\.[^.]+$/, '')}_${w}x${h}.${extension}`;
         if (user) await saveFileToDatabase(blob, outputName, { operation: 'resize', sourceFile: file.name, width: w, height: h }).catch(() => {});
         recordActivity('resize', file.name);
         downloadBlob(blob, outputName);
+        setResults((current) => ({ ...current, [id]: { targetBytes, actualSize: blob.size, width: w, height: h } }));
         setProgress(i + 1);
       }
-      notify(`${images.length} image${images.length === 1 ? '' : 's'} resized and downloaded.`);
+      notify(`${images.length} image${images.length === 1 ? '' : 's'} ${targetBytes != null ? 'compressed' : 'resized'} and downloaded.`);
     } catch (err) {
       console.error(err);
       notify(err.message || 'A resize failed.', 'error');
@@ -232,7 +298,9 @@ function ImageStudio({ user, notify }) {
     return processConvert();
   };
 
-  const runLabel = tool === 'resize' ? 'Resize images' : tool === 'makepdf' ? 'Create PDF' : 'Convert images';
+  const runLabel = tool === 'resize'
+    ? (resizeType === 'size' ? 'Compress images' : 'Resize images')
+    : tool === 'makepdf' ? 'Create PDF' : 'Convert images';
 
   return (
     <div>
@@ -281,10 +349,7 @@ function ImageStudio({ user, notify }) {
           ))}
           <div className="compression-option compact-panel compact-row">
             <span className="compression-label">Target file size limit</span>
-            <div className="target-size-inline">
-              <input type="number" min="1" max={targetUnit === 'MB' ? 100 : 10240} value={targetFileSize} onChange={(event) => { const val = Number(event.target.value); setTargetFileSize(isNaN(val) || val <= 0 ? 1 : val); }} />
-              <select value={targetUnit} onChange={(event) => setTargetUnit(event.target.value)} aria-label="Target size unit"><option value="KB">KB</option><option value="MB">MB</option></select>
-            </div>
+            {targetSizeField()}
           </div>
           <div className="compression-option compact-panel range-panel">
             <div className="range-line"><span className="compression-label">Target file size (percentage of original)</span><span className="range-value-box">{targetSize}%</span></div>
@@ -309,6 +374,7 @@ function ImageStudio({ user, notify }) {
             <div className="segmented">
               <button className={resizeType === 'percent' ? 'active' : ''} onClick={() => setResizeType('percent')}>Scale (%)</button>
               <button className={resizeType === 'px' ? 'active' : ''} onClick={() => setResizeType('px')}>Exact pixels</button>
+              <button className={resizeType === 'size' ? 'active' : ''} onClick={() => setResizeType('size')}>Max size</button>
             </div>
             {resizeType === 'percent' ? (
               <div className="compression-option compact-panel range-panel">
@@ -318,11 +384,16 @@ function ImageStudio({ user, notify }) {
                   <div className="range-scale"><span>1%</span><span>100%</span><span>200%</span><span>400%</span></div>
                 </div>
               </div>
-            ) : (
+            ) : resizeType === 'px' ? (
               <div className="resize-px">
                 <label>Width (px)<input type="number" min="1" value={width} placeholder="auto" onChange={(event) => setWidth(event.target.value)} /></label>
                 <label>Height (px)<input type="number" min="1" value={height} placeholder="auto" onChange={(event) => setHeight(event.target.value)} /></label>
                 <label className="aspect-toggle"><input type="checkbox" checked={keepAspect} onChange={(event) => setKeepAspect(event.target.checked)} /> Keep aspect ratio</label>
+              </div>
+            ) : (
+              <div className="compression-option compact-panel compact-row">
+                <span className="compression-label">Maximum file size</span>
+                {targetSizeField()}
               </div>
             )}
           </div>
@@ -370,7 +441,16 @@ function ImageStudio({ user, notify }) {
               <div className="file-row" key={id}>
                 <ImagePlus className="file-icon" size={20} />
                 <span className="file-name">{file.name}</span>
-                <span className="file-size" title={`Exact size: ${exactFileSize(file.size)}`}><strong>{formatBytes(file.size)}</strong><small>{exactFileSize(file.size)}</small></span>
+                <span className="file-size" title={`Exact size: ${exactFileSize(file.size)}`}>
+                  <strong>{formatBytes(file.size)}</strong>
+                  <small>{exactFileSize(file.size)}</small>
+                  {results[id] && (
+                    <small className="file-result">
+                      {results[id].targetBytes != null && <><b>Target:</b> {formatBytes(results[id].targetBytes)} | </>}
+                      <b>Actual:</b> {formatBytes(results[id].actualSize)} · {results[id].width}×{results[id].height}
+                    </small>
+                  )}
+                </span>
                 <button className="row-button danger" onClick={() => setImages((current) => current.filter((item) => item.id !== id))} aria-label={`Remove ${file.name}`}><X size={15} /></button>
               </div>
             ))}
