@@ -26,5 +26,8 @@ API
 - `GET /api/files` — list recent files
 - `GET /api/files/:id` — get file metadata
 - `DELETE /api/files/:id` — remove file and metadata
+- `POST /api/ai` — run Northstar AI (Gemini) on extracted PDF text. Body: `{ feature, text, pages?, question? }` where `feature` is `summary`, `keypoints`, `notes`, `mcqs`, `explain`, or `ask`.
 
 Uploaded files are stored in `backend/uploads` and metadata in MongoDB.
+
+Northstar AI calls the Gemini API with `GEMINI_API_KEY` (backend env only). If the key is missing, `POST /api/ai` returns `503`.

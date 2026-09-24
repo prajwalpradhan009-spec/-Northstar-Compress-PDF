@@ -63,9 +63,13 @@ Copy `backend/.env.example` to `backend/.env` and set the values:
 MONGODB_URI=mongodb://localhost:27017/file_studio
 JWT_SECRET=replace-with-a-long-random-secret
 PORT=4000
+GEMINI_API_KEY=your-google-ai-studio-api-key
+GEMINI_MODEL=gemini-3.6-flash
 ```
 
-`backend/.env` is Git-ignored. Never commit database credentials or JWT secrets.
+`backend/.env` is Git-ignored. Never commit database credentials, JWT secrets, or the Gemini API key. The Gemini key stays in backend environment variables only and is never exposed to the frontend.
+
+Northstar AI (summarize, key points, notes, MCQs, explain, and ask) runs through the Gemini API on the backend. Set `GEMINI_API_KEY` to enable it (get a key from AI Studio). The AI answers only from the uploaded PDF's text, and replies `I couldn't find this information in the uploaded document.` when the answer is not in the document.
 
 ## Deploy on Render with MongoDB Atlas
 
@@ -82,6 +86,7 @@ Add these Render environment variables:
 ```env
 MONGODB_URI=mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/DATABASE_NAME
 JWT_SECRET=your-long-random-secret
+GEMINI_API_KEY=your-google-ai-studio-api-key
 ```
 
 Do not include `MONGODB_URI=` inside the value field. In MongoDB Atlas, add the Render service to the project's Network Access list. For quick testing, `0.0.0.0/0` allows connections from Render, but a restricted network policy is preferred.

@@ -5,10 +5,8 @@ import {
   ScanSearch, Sparkles, Upload, X,
 } from 'lucide-react';
 import { getPageCount, pdfToText, renderPage } from '../lib/pdfTools';
-import {
-  answerQuestion, explainDocument, extractTextPreview, generateMcqs, generateNotes,
-  keyPoints, runOcr, summarize,
-} from '../lib/ai';
+import { extractTextPreview, runOcr } from '../lib/ai';
+import { runGeminiFeature, NOT_FOUND_RESPONSE } from '../lib/gemini';
 import { downloadBlob, exactFileSize, formatBytes, recordActivity } from '../lib/util';
 
 const aiFeatures = [
@@ -19,6 +17,16 @@ const aiFeatures = [
   { id: 'explain', label: 'Explain document', desc: 'Plain-language explanation of the content', icon: ScanSearch },
   { id: 'ask', label: 'Ask questions', desc: 'Ask anything and get answers from the text', icon: MessageSquareText },
 ];
+
+const busyLabels = {
+  summary: 'Summarizing with Gemini…',
+  keypoints: 'Extracting key points with Gemini…',
+  notes: 'Generating notes with Gemini…',
+  mcqs: 'Creating questions with Gemini…',
+  explain: 'Explaining document with Gemini…',
+  ask: 'Asking Gemini…',
+  ocr: 'Running OCR…',
+};
 
 function AiPanel({ notify }) {
   const [file, setFile] = useState(null);
@@ -58,41 +66,16 @@ function AiPanel({ notify }) {
     setMode(feature);
     setResult(null);
     if (!text.trim()) return notify('This PDF has no readable text.', 'error');
+    if (feature === 'ask' && !question.trim()) return notify('Type a question first, then run "Ask questions".', 'error');
     setBusy(true);
-    await new Promise((resolve) => setTimeout(resolve, 40));
     try {
-      let output = null;
-      if (feature === 'summary') output = { type: 'text', title: 'Summary', body: summarize(text, 4) };
-      if (feature === 'keypoints') output = { type: 'points', title: 'Key points', items: keyPoints(text, 6).map((p) => p.point) };
-      if (feature === 'notes') {
-        const notes = generateNotes(text);
-        output = {
-          type: 'notes',
-          title: 'Notes',
-          notes: notes.map((n, i) => ({ index: i + 1, body: n.source, keywords: n.keywords })),
-        };
-      }
-      if (feature === 'mcqs') {
-        recordActivity('ai-mcqs', file?.name || 'document');
-        const mcqs = generateMcqs(text, 5).map((m) => ({ ...m, userAnswer: -1 }));
-        output = { type: 'mcqs', title: 'Multiple-choice questions', questions: mcqs };
-      }
-      if (feature === 'explain') {
-        const explained = explainDocument(text, 6);
-        output = { type: 'explain', title: 'Document explanation', ...explained };
-      }
-      if (feature === 'ask') {
-        if (!question.trim()) {
-          setBusy(false);
-          return notify('Type a question first, then run "Ask questions".', 'error');
-        }
-        const { answer, confidence } = answerQuestion(question, text);
-        output = { type: 'answer', title: 'Answer', body: answer, meta: `match confidence ${Math.round(confidence * 100)}%` };
-      }
+      const output = await runGeminiFeature({ feature, text, question: question.trim(), pages });
+      if (feature === 'ask' && !output?.body?.trim()) output.body = NOT_FOUND_RESPONSE;
       setResult(output);
+      if (feature !== 'ask') recordActivity(`ai-${feature}`, file?.name || 'document');
     } catch (err) {
       console.error(err);
-      notify(resultError(feature), 'error');
+      notify(err?.message || resultError(feature), 'error');
     } finally {
       setBusy(false);
     }
@@ -142,7 +125,6 @@ function AiPanel({ notify }) {
     if (!result?.body) return;
     const blob = new Blob([result.body], { type: 'text/plain' });
     downloadBlob(blob, `${file?.name?.replace(/\.[^.]+$/, '') || 'document'}_${mode}.txt`);
-    recordActivity(`ai-${mode}`, file?.name || 'document');
   };
 
   return (
@@ -151,7 +133,7 @@ function AiPanel({ notify }) {
         <div>
           <p className="section-kicker">NORTHSTAR AI</p>
           <h2>Understand any PDF</h2>
-          <p>Upload a document, then summarize, question, and study it with on-device intelligence. Your text never leaves the browser.</p>
+          <p>Upload a document, then summarize, question, and study it with Northstar AI powered by Gemini. Every answer is grounded in your uploaded PDF.</p>
         </div>
         {file && <span className="count">{pages.length} pages</span>}
       </div>
@@ -214,7 +196,7 @@ function AiPanel({ notify }) {
       {busy && (
         <div className="ai-thinking" role="status">
           <span className="loading-spinner" aria-hidden="true" />
-          <span>Analyzing document…</span>
+          <span>{busyLabels[mode] || 'Analyzing document…'}</span>
         </div>
       )}
 

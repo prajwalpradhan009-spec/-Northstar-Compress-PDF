@@ -11,6 +11,7 @@ dotenv.config();
 const filesRouter = require('./routes/files');
 const authRouter = require('./routes/auth');
 const historyRouter = require('./routes/history');
+const aiRouter = require('./routes/ai');
 
 const app = express();
 app.use(cors());
@@ -68,6 +69,7 @@ connectWithRetry();
 app.use('/api/files', filesRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/history', historyRouter);
+app.use('/api/ai', aiRouter);
 
 app.get('/api/ping', (req, res) => res.json({ ok: true, time: Date.now() }));
 
