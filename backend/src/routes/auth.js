@@ -3,11 +3,12 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const config = require('../../config/env');
 const User = require('../models/User');
 const { sendResetEmail } = require('../lib/mailer');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'northstar-secret-key';
+const JWT_SECRET = config.auth.jwtSecret;
 const RESET_CODE_TTL_MS = 30 * 60 * 1000;
 
 function hashResetCode(code) {
@@ -140,17 +141,22 @@ router.post('/forgot-password', async (req, res) => {
     await user.save();
 
     let emailed = false;
-    let emailError = '';
+    let failure = null;
     try {
       emailed = await sendResetEmail({ to: user.email, resetCode, expiresAt });
     } catch (error) {
-      emailError = error.message || 'Unknown SMTP error';
-      console.error('Failed to send reset email:', emailError);
+      failure = error;
+      // Detail stays in the server log; the browser gets a readable reason.
+      console.error('Forgot password: reset email could not be sent.', error.smtpReason || '', error.message || '');
     }
 
     if (!emailed) {
-      return res.status(500).json({
-        error: `Your reset code was not emailed because sending failed. ${emailError || 'Check SMTP_USER/SMTP_PASS in backend/.env.'}`,
+      const isNotConfigured = failure && failure.smtpReason === 'not-configured';
+      return res.status(503).json({
+        error: failure && failure.clientMessage
+          ? failure.clientMessage
+          : 'The reset code could not be emailed right now. Try again in a few minutes.',
+        ...(isNotConfigured ? {} : { hint: 'server-logged' }),
       });
     }
 

@@ -24,6 +24,10 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
+// The reset flow talks to Gmail over SMTP, so give it more room than a normal
+// request — but never let the button hang on "Please wait…".
+const AUTH_TIMEOUT_MS = 45000;
+
 const pdfTools = [
   { id: 'merge', label: 'Merge PDF', icon: Merge, kind: 'merge', desc: 'Combine two or more files into one document' },
   { id: 'compress', label: 'Compress PDF', icon: Package, kind: 'single', desc: 'Rebuild pages to shrink file size' },
@@ -168,6 +172,7 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authData, setAuthData] = useState({ name: '', email: '', password: '' });
   const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [resetCode, setResetCode] = useState('');
   const [user, setUser] = useState(null);
@@ -278,7 +283,6 @@ function App() {
   }, []);
 
   const showNotice = (message, kind = 'success') => setNotice({ message, kind });
-
   const openTab = (tab) => {
     if (tab === 'image' && !user) {
       showNotice('Please sign up or log in before opening Image studio.', 'error');
@@ -292,11 +296,17 @@ function App() {
   const handleAuthInput = (event) => {
     const { name, value } = event.target;
     setAuthData((current) => ({ ...current, [name]: value }));
+    if (authError) setAuthError('');
   };
 
   const submitAuth = async () => {
     if (authLoading) return;
     setAuthLoading(true);
+    setAuthError('');
+    // Without this the button can sit on "Please wait…" forever if the
+    // server or the mail provider never answers.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
     try {
       if ((authMode === 'signup' || authMode === 'reset') && !STRONG_PASSWORD_REGEX.test(authData.password)) {
         throw new Error('Use a strong password: at least 8 characters, including uppercase, lowercase, a number, and a symbol like @ # $.');
@@ -320,6 +330,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       const responseText = await response.text();
       let result = {};
@@ -353,8 +364,20 @@ function App() {
         showNotice('Password updated. Log in with your new password.');
       }
     } catch (error) {
-      showNotice(error instanceof TypeError ? 'Cannot reach the server. Start the backend and MongoDB, then try again.' : error.message || 'Authentication failed.', 'error');
+      let message;
+      if (error && error.name === 'AbortError') {
+        message = authMode === 'forgot'
+          ? 'The request took too long. The server could not send the reset email in time — please try again.'
+          : 'The request timed out. Please try again.';
+      } else if (error instanceof TypeError) {
+        message = 'Cannot reach the server. Start the backend and MongoDB, then try again.';
+      } else {
+        message = error.message || 'Authentication failed.';
+      }
+      setAuthError(message);
+      showNotice(message, 'error');
     } finally {
+      clearTimeout(timer);
       setAuthLoading(false);
     }
   };
@@ -1265,8 +1288,11 @@ const runExtract = async () => {
                     <input name="resetCode" type="text" value={resetCode} onChange={(event) => setResetCode(event.target.value)} placeholder="Paste the reset code" autoComplete="one-time-code" required />
                   </label>
                 )}
+                {authError && (
+                  <p className="auth-error" role="alert">{authError}</p>
+                )}
                 <button className="primary-button auth-submit" type="submit" disabled={authLoading}>
-                  {authLoading ? 'Please wait...' : authMode === 'login' ? 'Log in' : authMode === 'signup' ? 'Create account' : authMode === 'forgot' ? 'Send reset code' : 'Set new password'}
+                  {authLoading ? (authMode === 'forgot' ? 'Sending reset code…' : 'Please wait...') : authMode === 'login' ? 'Log in' : authMode === 'signup' ? 'Create account' : authMode === 'forgot' ? 'Send reset code' : 'Set new password'}
                 </button>
                 {authMode === 'login' && (
                   <button className="forgot-link" type="button" onClick={() => { setResetCode(''); setAuthMode('forgot'); }}>Forgot password?</button>

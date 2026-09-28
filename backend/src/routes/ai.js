@@ -1,4 +1,5 @@
 const express = require('express');
+const config = require('../../config/env');
 
 const router = express.Router();
 
@@ -6,10 +7,10 @@ const NOT_FOUND_RESPONSE = "I couldn't find this information in the uploaded doc
 
 const FEATURES = ['summary', 'keypoints', 'notes', 'mcqs', 'explain', 'ask'];
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
-const API_KEY = process.env.GEMINI_API_KEY || '';
-const REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 60000;
-const MAX_DOCUMENT_CHARS = Number(process.env.GEMINI_MAX_DOCUMENT_CHARS) || 250000;
+const MODEL = config.gemini.model;
+const API_KEY = config.gemini.apiKey;
+const REQUEST_TIMEOUT_MS = config.gemini.timeoutMs;
+const MAX_DOCUMENT_CHARS = config.gemini.maxDocumentChars;
 const MAX_QUESTION_CHARS = 2000;
 
 class AiError extends Error {

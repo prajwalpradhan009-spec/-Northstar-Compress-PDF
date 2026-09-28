@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
+const config = require('../../config/env');
 const User = require('../models/User');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'northstar-secret-key';
+const JWT_SECRET = config.auth.jwtSecret;
 
 function getToken(req) {
   const header = req.get('authorization') || '';

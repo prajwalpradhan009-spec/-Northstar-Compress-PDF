@@ -224,6 +224,22 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 }
 .auth-submit:hover { transform: translateY(-2px); filter: brightness(1.05); box-shadow: 0 16px 30px rgba(14, 165, 124, .34); }
 .auth-submit:active { transform: translateY(0) scale(.99); }
+.auth-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 138, 138, .45);
+  border-radius: 11px;
+  background: rgba(159, 36, 48, .16);
+  color: #ffb4bb;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  animation: field-reveal .3s both;
+}
+[data-theme='light'] .auth-error { color: #9f2430; background: rgba(159, 36, 48, .08); border-color: rgba(159, 36, 48, .28); }
 .forgot-link {
   display: block;
   margin: 10px auto 0;

@@ -5,13 +5,40 @@ frontend/node_modules/
 # Build output
 frontend/dist/
 
-# Local environment and uploads
+# Environment files — never commit real secrets.
+# .env.example files are intentionally NOT ignored and stay safe to commit.
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
 backend/.env
+backend/.env.local
+backend/.env.development
+backend/.env.production
+backend/.env.*.local
+frontend/.env
+frontend/.env.local
+frontend/.env.development
+frontend/.env.production
+frontend/.env.*.local
+
+# User uploads (temporary, never permanent storage)
 backend/uploads/
+backend/src/uploads/
+
+# OCR / rendering scratch files
+*.traineddata
+.tesseract/
 
 # Python cache
 __pycache__/
 *.py[cod]
 
+# Logs
+*.log
+npm-debug.log*
+
 # Local editor files
 .vscode/
+.DS_Store

@@ -3,12 +3,14 @@ const mongoose = require('mongoose');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
+const config = require('../../config/env');
 const File = require('../models/File');
-const { requireAuth, getToken } = require('../middleware/auth');
+const { getToken } = require('../middleware/auth');
 
 const router = express.Router();
 
-const uploadDir = path.join(__dirname, '..', 'uploads');
+const uploadDir = config.uploadsDir;
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -23,7 +25,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB limit
+  limits: { fileSize: config.pdf.maxUploadBytes },
 });
 
 function isDbReady() {
@@ -50,7 +52,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     try {
       const token = getToken(req);
       if (token) {
-        const payload = require('jsonwebtoken').verify(token, process.env.JWT_SECRET || 'northstar-secret-key');
+        const payload = jwt.verify(token, config.auth.jwtSecret);
         ownerId = payload.id;
       }
     } catch {
@@ -96,7 +98,7 @@ router.get('/', async (req, res) => {
     if (owned === 'true') {
       const token = getToken(req);
       if (!token) return res.status(401).json({ error: 'Authentication required.' });
-      const payload = require('jsonwebtoken').verify(token, process.env.JWT_SECRET || 'northstar-secret-key');
+      const payload = jwt.verify(token, config.auth.jwtSecret);
       query = { user: payload.id };
     }
     const docs = await File.find(query).sort({ createdAt: -1 }).limit(100);

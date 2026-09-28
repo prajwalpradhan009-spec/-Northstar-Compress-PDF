@@ -24,7 +24,7 @@ def merge_pdfs(pdf_list, output_filename="Merged_Document.pdf", output_dir=None)
     destination_dir = Path(output_dir) if output_dir else Path(pdf_list[0]).parent
     destination_dir.mkdir(parents=True, exist_ok=True)
     output_path = destination_dir / output_filename
-    merger = pdf_module.PdfMerger()
+    merger = pdf_module.PdfWriter()
 
     try:
         for pdf in pdf_list:
