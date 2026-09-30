@@ -23,6 +23,7 @@ import Avatar from './components/Avatar';
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // The reset flow talks to Gmail over SMTP, so give it more room than a normal
 // request — but never let the button hang on "Please wait…".
@@ -283,11 +284,31 @@ function App() {
   }, []);
 
   const showNotice = (message, kind = 'success') => setNotice({ message, kind });
+  // Every path into or out of the dialog goes through these, so the password
+  // can never be left revealed and a stale error can never greet the user.
+  const openAuth = (mode = 'login') => {
+    setShowPassword(false);
+    setAuthError('');
+    setAuthMode(mode);
+    setAuthOpen(true);
+  };
+
+  const closeAuth = () => {
+    setShowPassword(false);
+    setAuthError('');
+    setAuthOpen(false);
+  };
+
+  const switchAuthMode = (mode) => {
+    setShowPassword(false);
+    setAuthError('');
+    setAuthMode(mode);
+  };
+
   const openTab = (tab) => {
     if (tab === 'image' && !user) {
       showNotice('Please sign up or log in before opening Image studio.', 'error');
-      setAuthMode('signup');
-      setAuthOpen(true);
+      openAuth('signup');
       return;
     }
     setActiveTab(tab);
@@ -299,6 +320,22 @@ function App() {
     if (authError) setAuthError('');
   };
 
+  // Escape closes the dialog, and the page behind it must not scroll on mobile
+  // while the dialog is up.
+  useEffect(() => {
+    if (!authOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closeAuth();
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [authOpen]);
+
   const submitAuth = async () => {
     if (authLoading) return;
     setAuthLoading(true);
@@ -308,6 +345,22 @@ function App() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
     try {
+      // The form runs with noValidate, so surface problems here as readable
+      // messages instead of silent native bubbles that block submission.
+      const email = authData.email.trim();
+      if (!email) throw new Error('Please enter your email address.');
+      if (!EMAIL_REGEX.test(email)) throw new Error('Please enter a valid email address.');
+      if (authMode === 'signup' && authData.name.trim().length < 2) {
+        throw new Error('Please enter your name (at least 2 characters).');
+      }
+      if (authMode === 'reset' && !resetCode.trim()) {
+        throw new Error('Please enter the reset code from your email.');
+      }
+      // Login deliberately does NOT enforce the signup strength policy, otherwise
+      // older accounts with shorter passwords could never sign in again.
+      if (authMode !== 'forgot' && !authData.password) {
+        throw new Error('Please enter your password.');
+      }
       if ((authMode === 'signup' || authMode === 'reset') && !STRONG_PASSWORD_REGEX.test(authData.password)) {
         throw new Error('Use a strong password: at least 8 characters, including uppercase, lowercase, a number, and a symbol like @ # $.');
       }
@@ -315,13 +368,13 @@ function App() {
       let body;
       if (authMode === 'login') {
         endpoint = `${API_BASE}/api/auth/login`;
-        body = { email: authData.email, password: authData.password };
+        body = { email, password: authData.password };
       } else if (authMode === 'signup') {
         endpoint = `${API_BASE}/api/auth/signup`;
-        body = { name: authData.name, email: authData.email, password: authData.password };
+        body = { name: authData.name.trim(), email, password: authData.password };
       } else if (authMode === 'forgot') {
         endpoint = `${API_BASE}/api/auth/forgot-password`;
-        body = { email: authData.email };
+        body = { email };
       } else {
         endpoint = `${API_BASE}/api/auth/reset-password`;
         body = { token: resetCode.trim(), password: authData.password };
@@ -345,14 +398,14 @@ function App() {
         localStorage.setItem('northstar_token', result.token);
         localStorage.setItem('northstar_user', JSON.stringify(result.user));
         setUser(result.user);
-        setAuthOpen(false);
+        closeAuth();
         setAuthData({ name: '', email: '', password: '' });
         setResetCode('');
         showNotice(authMode === 'login' ? 'Signed in successfully.' : 'Account created successfully.');
       } else if (authMode === 'forgot') {
         if (result.emailed) {
           setResetCode('');
-          setAuthMode('reset');
+          switchAuthMode('reset');
           showNotice('Reset code sent! Check your inbox and enter it below.');
         } else {
           showNotice('No account found for that email. Check the address and try again.', 'error');
@@ -360,7 +413,7 @@ function App() {
       } else {
         setAuthData({ name: '', email: '', password: '' });
         setResetCode('');
-        setAuthMode('login');
+        switchAuthMode('login');
         showNotice('Password updated. Log in with your new password.');
       }
     } catch (error) {
@@ -778,16 +831,10 @@ const runExtract = async () => {
       <header className={`topbar${headerHidden ? ' topbar-hidden' : ''}`}>
         <div className="topbar-inner">
           <div className="brand">
-            {user ? (
-              <span className="brand-logo brand-logo-letter">
-                {(user.name || '').trim().charAt(0).toUpperCase() || 'N'}
-              </span>
-            ) : (
-              <picture>
-                <source srcSet="/northstar-logo.png" type="image/png" />
-                <img className="brand-logo" src="/northstar-logo.png" alt="Northstar — PDF tools, image studio, and document AI" />
-              </picture>
-            )}
+            <picture>
+              <source srcSet="/northstar-logo.png" type="image/png" />
+              <img className="brand-logo" src="/northstar-logo.png" alt="Northstar — PDF tools, image studio, and document AI" />
+            </picture>
             <span>NORTHSTAR</span>
           </div>
           <div className="header-actions">
@@ -812,8 +859,8 @@ const runExtract = async () => {
               </div>
             ) : (
               <>
-                <button className="soft-button" onClick={() => { setAuthMode('login'); setAuthOpen(true); }}>Log in</button>
-                <button className="primary-button auth-button" onClick={() => { setAuthMode('signup'); setAuthOpen(true); }}>Sign up</button>
+                <button className="soft-button" onClick={() => openAuth('login')}>Log in</button>
+                <button className="primary-button auth-button" onClick={() => openAuth('signup')}>Sign up</button>
               </>
             )}
           </div>
@@ -1245,48 +1292,69 @@ const runExtract = async () => {
 
       <AnimatePresence>
         {authOpen && (
-          <motion.div className="auth-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setAuthOpen(false)}>
-            <motion.div className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" initial={{ y: 18, opacity: 0, scale: 0.98 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 18, opacity: 0, scale: 0.98 }} onClick={(event) => event.stopPropagation()}>
+          <motion.div className="auth-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeAuth}>
+            <motion.div className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" tabIndex={-1} initial={{ y: 18, opacity: 0, scale: 0.98 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 18, opacity: 0, scale: 0.98 }} onClick={(event) => event.stopPropagation()}>
               <div className="auth-header">
                 <div>
                   <h3 id="auth-title">{authMode === 'forgot' ? 'Reset your password' : authMode === 'reset' ? 'Enter reset code' : authMode === 'login' ? 'Welcome back' : 'Create account'}</h3>
                   <p className="auth-subtitle">{authMode === 'forgot' ? 'Enter your account email to receive a reset code.' : authMode === 'reset' ? 'Use the code to set a new password. It expires in 30 minutes.' : authMode === 'login' ? 'Access your Northstar workspace.' : 'Save files, history, and usage to your private dashboard.'}</p>
                 </div>
-                <button className="close-auth" onClick={() => setAuthOpen(false)} aria-label="Close authentication dialog"><X size={16} /></button>
+                <button className="close-auth" type="button" onClick={closeAuth} aria-label="Close authentication dialog"><X size={16} /></button>
               </div>
               {(authMode === 'login' || authMode === 'signup') && (
                 <div className="auth-switch">
-                  <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>Log in</button>
-                  <button className={authMode === 'signup' ? 'active' : ''} onClick={() => setAuthMode('signup')}>Sign up</button>
+                  <button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => switchAuthMode('login')}>Log in</button>
+                  <button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => switchAuthMode('signup')}>Sign up</button>
                 </div>
               )}
-              <form className="auth-form" onSubmit={(event) => { event.preventDefault(); submitAuth(); }}>
+              <form className="auth-form" onSubmit={(event) => { event.preventDefault(); submitAuth(); }} noValidate>
                 {authMode === 'signup' && (
-                  <label>
-                    <span>Name</span>
-                    <input name="name" type="text" value={authData.name} onChange={handleAuthInput} placeholder="Your name" autoComplete="name" required />
-                  </label>
+                  <div className="auth-field">
+                    <label htmlFor="auth-name">Name</label>
+                    <input id="auth-name" name="name" type="text" value={authData.name} onChange={handleAuthInput} placeholder="Your name" autoComplete="name" required />
+                  </div>
                 )}
-                <label>
-                  <span>Email</span>
-                  <input name="email" type="email" value={authData.email} onChange={handleAuthInput} placeholder="you@example.com" autoComplete="email" required />
-                </label>
+                <div className="auth-field">
+                  <label htmlFor="auth-email">Email</label>
+                  <input id="auth-email" name="email" type="email" value={authData.email} onChange={handleAuthInput} placeholder="you@example.com" autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck="false" required />
+                </div>
                 {authMode !== 'forgot' && (
-                  <label>
-                    <span>Password</span>
+                  <div className="auth-field">
+                    <label htmlFor="auth-password">Password</label>
                     <span className="password-field">
-                      <input name="password" type={showPassword ? 'text' : 'password'} value={authData.password} onChange={handleAuthInput} placeholder={authMode === 'reset' ? 'New password — strong (8+ chars, @ # $, A-Z, a-z, 0-9)' : 'Strong password — 8+ chars with @ # $, A-Z, a-z, 0-9'} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength="8" required />
-                      <button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}>
-                        {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                      <input
+                        id="auth-password"
+                        name="password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={authData.password}
+                        onChange={handleAuthInput}
+                        placeholder={authMode === 'login' ? 'Your password' : 'Strong password — 8+ chars with @ # $'}
+                        autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck="false"
+                        minLength={authMode === 'login' ? undefined : 8}
+                        required
+                      />
+                      <button
+                        className="password-toggle"
+                        type="button"
+                        onClick={() => setShowPassword((value) => !value)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-pressed={showPassword}
+                        title={showPassword ? 'Hide password' : 'Show password'}
+                        onContextMenu={(event) => event.preventDefault()}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
                     </span>
-                  </label>
+                  </div>
                 )}
                 {authMode === 'reset' && (
-                  <label>
-                    <span>Reset code</span>
-                    <input name="resetCode" type="text" value={resetCode} onChange={(event) => setResetCode(event.target.value)} placeholder="Paste the reset code" autoComplete="one-time-code" required />
-                  </label>
+                  <div className="auth-field">
+                    <label htmlFor="auth-reset-code">Reset code</label>
+                    <input id="auth-reset-code" name="resetCode" type="text" value={resetCode} onChange={(event) => setResetCode(event.target.value)} placeholder="Paste the reset code" autoComplete="one-time-code" autoCapitalize="none" autoCorrect="off" spellCheck="false" required />
+                  </div>
                 )}
                 {authError && (
                   <p className="auth-error" role="alert">{authError}</p>
@@ -1295,10 +1363,10 @@ const runExtract = async () => {
                   {authLoading ? (authMode === 'forgot' ? 'Sending reset code…' : 'Please wait...') : authMode === 'login' ? 'Log in' : authMode === 'signup' ? 'Create account' : authMode === 'forgot' ? 'Send reset code' : 'Set new password'}
                 </button>
                 {authMode === 'login' && (
-                  <button className="forgot-link" type="button" onClick={() => { setResetCode(''); setAuthMode('forgot'); }}>Forgot password?</button>
+                  <button className="forgot-link" type="button" onClick={() => { setResetCode(''); switchAuthMode('forgot'); }}>Forgot password?</button>
                 )}
                 {(authMode === 'forgot' || authMode === 'reset') && (
-                  <button className="forgot-link" type="button" onClick={() => { setResetCode(''); setAuthData((current) => ({ ...current, password: '' })); setAuthMode('login'); }}>← Back to log in</button>
+                  <button className="forgot-link" type="button" onClick={() => { setResetCode(''); setAuthData((current) => ({ ...current, password: '' })); switchAuthMode('login'); }}>← Back to log in</button>
                 )}
               </form>
             </motion.div>

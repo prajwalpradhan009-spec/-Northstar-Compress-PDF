@@ -31,6 +31,9 @@ backend/src/uploads/
 *.traineddata
 .tesseract/
 
+# Test output artifacts
+backend/test/out/
+
 # Python cache
 __pycache__/
 *.py[cod]

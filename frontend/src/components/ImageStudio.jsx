@@ -5,10 +5,15 @@ import { downloadBlob, exactFileSize, formatBytes, recordActivity, saveFileToDat
 import { imagesToPdf } from '../lib/pdfTools';
 
 const outputTypes = ['JPEG', 'PNG', 'WEBP'];
+
+// Some Chrome builds advertise WebP through toDataURL but never invoke the toBlob
+// callback for it, which would stall every encode. Track the first failure so the
+// rest of the session goes straight to JPEG instead of paying the timeout again.
+let webpEncoderUsable = true;
 const compressionModes = [
-  { id: 'recommended', label: 'Recommended compression', description: 'Good quality, good compression', badge: 'RECOMMENDED' },
-  { id: 'extreme', label: 'Extreme compression', description: 'Lower quality, high compression', badge: 'BEST COMPRESSION' },
-  { id: 'lossless', label: 'Lossless compression', description: 'Preserve image quality', badge: 'LOSSLESS' },
+  { id: 'recommended', label: 'Recommended compression', description: 'Keeps full resolution and the highest quality that still saves space', badge: 'RECOMMENDED', minQuality: 0.82, maxQuality: 0.95 },
+  { id: 'extreme', label: 'Extreme compression', description: 'Smallest file, resizes and softens photos', badge: 'BEST COMPRESSION', minQuality: 0.45, maxQuality: 0.8 },
+  { id: 'lossless', label: 'Keep original quality', description: 'Never resizes the image', badge: 'LOSSLESS', minQuality: 1, maxQuality: 1 },
 ];
 
 const studioTools = [
@@ -23,8 +28,14 @@ function ImageStudio({ user, notify }) {
   const [format, setFormat] = useState('JPEG');
   const [quality, setQuality] = useState(95);
   const [compressionMode, setCompressionMode] = useState('recommended');
-  const [targetSize, setTargetSize] = useState(60);
-  const [targetFileSize, setTargetFileSize] = useState('500');
+  // 100% keeps the source dimensions and lets the encoder pick the highest
+  // quality that still fits the original byte count. A lower default silently
+  // forced quality down to ~0.78 on already-compressed photos, which is what
+  // made converted images look soft and blocky.
+  const [targetSize, setTargetSize] = useState(100);
+  // Empty means "no absolute cap". Defaulting this to a small value silently
+  // crushed every large photo, so it stays blank unless the user asks for it.
+  const [targetFileSize, setTargetFileSize] = useState('');
   const [targetUnit, setTargetUnit] = useState('KB');
   const [resizeType, setResizeType] = useState('percent');
   const [percent, setPercent] = useState(100);
@@ -55,6 +66,42 @@ function ImageStudio({ user, notify }) {
     return n * (unit === 'MB' ? 1024 * 1024 : 1024);
   };
 
+  // Drawing a large source straight into a much smaller canvas in one
+  // drawImage() call is heavily aliased by the browser and looks soft. Halving
+  // repeatedly (each step well under 2x) keeps far more real detail.
+  const sourceSize = (source) => ({
+    w: source.width || source.naturalWidth || 0,
+    h: source.height || source.naturalHeight || 0,
+  });
+
+  const drawScaled = (ctx, source, w, h) => {
+    const { w: sw, h: sh } = sourceSize(source);
+    let current = source;
+    let cw = sw;
+    let ch = sh;
+    if (!cw || !ch) return ctx.drawImage(source, 0, 0, w, h);
+    while (cw > w * 2 && ch > h * 2) {
+      const nw = Math.max(w, Math.round(cw / 2));
+      const nh = Math.max(h, Math.round(ch / 2));
+      const step = document.createElement('canvas');
+      step.width = nw;
+      step.height = nh;
+      const sctx = step.getContext('2d');
+      if (!sctx) break;
+      sctx.imageSmoothingEnabled = true;
+      sctx.imageSmoothingQuality = 'high';
+      sctx.drawImage(current, 0, 0, nw, nh);
+      current = step;
+      cw = nw;
+      ch = nh;
+    }
+    ctx.drawImage(current, 0, 0, w, h);
+  };
+
+  // An encoder that never invokes its callback would freeze the whole conversion,
+  // so every attempt is bounded and degrades to JPEG rather than hanging.
+  const ENCODE_TIMEOUT_MS = 4000;
+
   const encodeCanvas = (bitmap, w, h, mime, quality) =>
     new Promise((resolve) => {
       const canvas = document.createElement('canvas');
@@ -64,8 +111,52 @@ function ImageStudio({ user, notify }) {
       if (!ctx) return resolve(null);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((out) => resolve(out), mime, quality);
+
+      const paint = (target) => {
+        // JPEG has no alpha channel, so transparent pixels would otherwise be
+        // encoded as black. Flatten onto white for JPEG and for the JPEG fallback.
+        if (target === 'image/jpeg') {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        drawScaled(ctx, bitmap, canvas.width, canvas.height);
+      };
+
+      let settled = false;
+      const finish = (blob) => {
+        if (settled) return;
+        settled = true;
+        resolve(blob);
+      };
+
+      const attempt = (target, targetQuality) => {
+        paint(target);
+        let done = false;
+        const degrade = () => {
+          if (done) return;
+          done = true;
+          if (target !== 'image/jpeg') {
+            if (target === 'image/webp') webpEncoderUsable = false;
+            return attempt('image/jpeg', targetQuality === 1 ? 0.95 : targetQuality);
+          }
+          return finish(null);
+        };
+        const guard = setTimeout(degrade, ENCODE_TIMEOUT_MS);
+        canvas.toBlob((out) => {
+          if (done) return;
+          done = true;
+          clearTimeout(guard);
+          // A browser without the requested encoder silently returns a different
+          // type, so the file must match a format that actually encodes.
+          if (out && target === 'image/webp' && out.type !== 'image/webp') {
+            webpEncoderUsable = false;
+            return degrade();
+          }
+          finish(out);
+        }, target, targetQuality);
+      };
+
+      attempt(mime === 'image/webp' && !webpEncoderUsable ? 'image/jpeg' : mime, quality);
     });
 
   const decodeImage = async (file) => {
@@ -101,12 +192,15 @@ const sanitizeSizeInput = (raw) => {
   );
 
   // Iterative/binary-search compressor: finds the highest quality that fits the
-  // target size, and only when quality alone is not enough shinks the dimensions
+  // target size, and only when quality alone is not enough shrinks the dimensions
   // (preserving aspect ratio) while re-running the quality search at each size.
   const compressToTarget = async (bitmap, mime, targetBytes, opts = {}) => {
     const supportsQuality = mime !== 'image/png';
     const minQualityIdx = Math.max(0.05, Math.min(0.9, Number(opts.minQuality) || 0.35));
     const maxQualityIdx = Math.max(minQualityIdx, Number(opts.maxQuality) || 0.95);
+    // PNG has no quality knob, and lossless mode is explicitly about keeping the
+    // image intact, so in both cases the size target must never resize the image.
+    const allowDownscale = supportsQuality && opts.allowDownscale !== false;
     const originalW = Math.max(1, Math.round(bitmap.width));
     const originalH = Math.max(1, Math.round(bitmap.height));
     const ratio = originalW / originalH;
@@ -139,6 +233,26 @@ const sanitizeSizeInput = (raw) => {
 
     const full = await qualitySearch(originalW, originalH);
     if (full) return full;
+
+    // The target cannot be met at full size. If resizing is not allowed, return
+    // the best full-resolution encode instead of shrinking or collapsing the
+    // image, and flag that the target was exceeded.
+    if (!allowDownscale) {
+      const q = supportsQuality ? maxQualityIdx : undefined;
+      const blob = await encodeCanvas(bitmap, originalW, originalH, mime, q);
+      return { blob, quality: supportsQuality ? q : 1, width: originalW, height: originalH, exceededTarget: true };
+    }
+
+    // Prefer keeping the full resolution when the cheapest acceptable quality is
+    // already close to the target. Hitting the target exactly by shrinking pixels
+    // costs far more visible detail than a small overshoot, so only resize when
+    // full resolution is genuinely far too large.
+    if (opts.keepFullSize) {
+      const floorBlob = await encodeCanvas(bitmap, originalW, originalH, mime, minQualityIdx);
+      if (floorBlob && floorBlob.size <= targetBytes * 1.5) {
+        return { blob: floorBlob, quality: minQualityIdx, width: originalW, height: originalH, exceededTarget: true };
+      }
+    }
 
     let fit = null;
     let fitScale = 0;
@@ -185,9 +299,12 @@ const sanitizeSizeInput = (raw) => {
       return fit;
     }
 
-    const tiny = dimsAt(0);
+    // Last resort: the target was unreachable. Floor the long edge at 16px so we
+    // never hand back a degenerate 1x1 image, and flag that the target was missed.
+    const minScale = 16 / Math.max(originalW, originalH);
+    const tiny = dimsAt(minScale);
     const blob = await encodeCanvas(bitmap, tiny.w, tiny.h, mime, supportsQuality ? minQualityIdx : undefined);
-    return { blob, quality: minQualityIdx, width: tiny.w, height: tiny.h };
+    return { blob, quality: minQualityIdx, width: tiny.w, height: tiny.h, exceededTarget: true };
   };
 
   const processConvert = async () => {
@@ -201,27 +318,46 @@ const sanitizeSizeInput = (raw) => {
         const bitmap = await decodeImage(file);
         const originalSize = file.size || 1;
         const percentGoal = Math.min(100, Math.max(1, targetSize));
-        const targetBytes = Math.min(originalSize * (percentGoal / 100), unitBytesOf(targetFileSize, targetUnit));
+        const percentBytes = originalSize * (percentGoal / 100);
+        // A blank or unparseable limit means "no absolute cap" rather than an
+        // error, so the percentage slider alone drives the result.
+        const limitBytes = unitBytesOf(targetFileSize, targetUnit);
+        if (String(targetFileSize).trim() && limitBytes <= 0) {
+          throw new Error('Enter a valid target file size limit in KB or MB (for example 100 KB or 0.5 MB).');
+        }
+        const targetBytes = limitBytes >= 1 ? Math.min(percentBytes, limitBytes) : percentBytes;
         if (!isFinite(targetBytes) || targetBytes < 1) {
           throw new Error('Enter a valid target file size limit in KB or MB (for example 100 KB or 0.5 MB).');
         }
-        const maxQuality = compressionMode === 'lossless' ? 1 : Math.min(1, Math.max(0.55, quality / 100));
+        const preset = compressionModes.find((mode) => mode.id === compressionMode) || compressionModes[0];
+        const sliderCeiling = compressionMode === 'lossless' ? 1 : Math.min(1, Math.max(0.55, quality / 100));
+        const maxQuality = mime === 'image/png' ? 1 : Math.min(preset.maxQuality, sliderCeiling);
 
-        const { blob, width, height } = await compressToTarget(bitmap, mime, targetBytes, {
-          minQuality: 0.35,
-          maxQuality: mime === 'image/png' ? 1 : maxQuality,
+        const { blob, width, height, exceededTarget } = await compressToTarget(bitmap, mime, targetBytes, {
+          minQuality: preset.minQuality,
+          maxQuality,
+          allowDownscale: compressionMode !== 'lossless',
+          keepFullSize: compressionMode === 'recommended',
         });
         if (!blob) throw new Error('Image export failed');
 
-        const extension = format.toLowerCase().replace('jpeg', 'jpg');
+        // The encoder can fall back to JPEG, so name the file from what was
+        // actually produced rather than from the requested format.
+        const actualFormat = blob.type === 'image/png' ? 'PNG' : blob.type === 'image/webp' ? 'WEBP' : 'JPEG';
+        const extension = actualFormat === 'JPEG' ? 'jpg' : actualFormat.toLowerCase();
         const outputName = `${file.name.replace(/\.[^.]+$/, '')}_converted.${extension}`;
-        if (user) await saveFileToDatabase(blob, outputName, { operation: 'convert', sourceFile: file.name, outputFormat: format, quality }).catch(() => {});
+        if (user) await saveFileToDatabase(blob, outputName, { operation: 'convert', sourceFile: file.name, outputFormat: actualFormat, quality }).catch(() => {});
         recordActivity('convert', file.name);
         downloadBlob(blob, outputName);
-        setResults((current) => ({ ...current, [id]: { targetBytes, actualSize: blob.size, width, height } }));
+        setResults((current) => ({ ...current, [id]: { targetBytes, actualSize: blob.size, width, height, exceededTarget } }));
         setProgress(i + 1);
       }
-      notify(`${images.length} image${images.length === 1 ? '' : 's'} downloaded.`);
+      const fellBack = format === 'WEBP' && !webpEncoderUsable;
+      notify(
+        fellBack
+          ? `${images.length} image${images.length === 1 ? '' : 's'} saved as JPG. This browser could not encode WebP, so JPG was used instead.`
+          : `${images.length} image${images.length === 1 ? '' : 's'} downloaded.`,
+      );
     } catch (err) {
       console.error(err);
       notify(err.message || 'An image could not be converted in this browser.', 'error');
@@ -237,10 +373,11 @@ const sanitizeSizeInput = (raw) => {
     setProcessing(true);
     setProgress(0);
     const mime = mimeFor(format);
-    const extension = format.toLowerCase().replace('jpeg', 'jpg');
+    // Blank means no cap, which keeps the plain resize path from erroring out.
     const targetBytes = resizeType === 'size' ? unitBytesOf(targetFileSize, targetUnit) : null;
+    const compressing = targetBytes != null && targetBytes >= 1;
     try {
-      if (targetBytes != null && (!isFinite(targetBytes) || targetBytes < 1)) {
+      if (resizeType === 'size' && String(targetFileSize).trim() && (!isFinite(targetBytes) || targetBytes < 1)) {
         throw new Error('Enter a valid maximum file size in KB or MB (for example 100 KB or 0.5 MB).');
       }
       for (let i = 0; i < images.length; i += 1) {
@@ -249,10 +386,11 @@ const sanitizeSizeInput = (raw) => {
         let w = bitmap.width;
         let h = bitmap.height;
         let blob = null;
-        if (targetBytes != null) {
+        if (targetBytes != null && targetBytes >= 1) {
           const out = await compressToTarget(bitmap, mime, targetBytes, {
-            minQuality: 0.35,
+            minQuality: 0.82,
             maxQuality: format === 'PNG' ? 1 : 0.95,
+            keepFullSize: true,
           });
           blob = out.blob;
           w = out.width;
@@ -287,14 +425,16 @@ const sanitizeSizeInput = (raw) => {
           blob = await encodeCanvas(bitmap, w, h, mime, format === 'PNG' ? undefined : 0.94);
         }
         if (!blob) throw new Error('Resize failed.');
-        const outputName = `${file.name.replace(/\.[^.]+$/, '')}_${w}x${h}.${extension}`;
+        // Name from the bytes actually produced; the encoder can fall back to JPEG.
+        const actualFormat = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
+        const outputName = `${file.name.replace(/\.[^.]+$/, '')}_${w}x${h}.${actualFormat}`;
         if (user) await saveFileToDatabase(blob, outputName, { operation: 'resize', sourceFile: file.name, width: w, height: h }).catch(() => {});
         recordActivity('resize', file.name);
         downloadBlob(blob, outputName);
-        setResults((current) => ({ ...current, [id]: { targetBytes, actualSize: blob.size, width: w, height: h } }));
+        setResults((current) => ({ ...current, [id]: { targetBytes: compressing ? targetBytes : null, actualSize: blob.size, width: w, height: h } }));
         setProgress(i + 1);
       }
-      notify(`${images.length} image${images.length === 1 ? '' : 's'} ${targetBytes != null ? 'compressed' : 'resized'} and downloaded.`);
+      notify(`${images.length} image${images.length === 1 ? '' : 's'} ${compressing ? 'compressed' : 'resized'} and downloaded.`);
     } catch (err) {
       console.error(err);
       notify(err.message || 'A resize failed.', 'error');
@@ -386,6 +526,7 @@ const sanitizeSizeInput = (raw) => {
             <span className="compression-label">Target file size limit</span>
             {targetSizeField()}
           </div>
+          <p className="resize-hint">Leave the size limit blank to keep full resolution. The 100% setting keeps the original pixel dimensions and re-encodes at the highest quality that still fits, so the image stays sharp. Drop lower only if you want a smaller file, and use PNG for the smallest file with no visible loss.</p>
           <div className="compression-option compact-panel range-panel">
             <div className="range-line"><span className="compression-label">Target file size (percentage of original)</span><span className="range-value-box">{targetSize}%</span></div>
             <div className="range-wrapper">
@@ -483,6 +624,7 @@ const sanitizeSizeInput = (raw) => {
                     <small className="file-result">
                       {results[id].targetBytes != null && <><b>Target:</b> {formatBytes(results[id].targetBytes)} | </>}
                       <b>Actual:</b> {formatBytes(results[id].actualSize)} · {results[id].width}×{results[id].height}
+                      {results[id].exceededTarget && <em> · kept full size to protect quality</em>}
                     </small>
                   )}
                 </span>

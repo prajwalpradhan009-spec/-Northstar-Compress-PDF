@@ -131,7 +131,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   transition: transform .25s ease, box-shadow .25s ease, filter .25s ease;
 }
 .brand-logo:hover { transform: translateY(-2px) scale(1.03); filter: brightness(1.08); box-shadow: 0 0 0 6px rgba(46, 230, 171, .16); }
-.brand-logo-letter { display: grid; place-items: center; color: #062018; background: linear-gradient(135deg, #2ee6ab, #17b98c); font-size: 24px; font-weight: 800; font-family: 'DM Mono', monospace; }
 .brand-mark { display: grid; place-items: center; width: 27px; height: 27px; color: #062018; background: linear-gradient(135deg, #2ee6ab, #17b98c); font-weight: 800; border-radius: 7px; animation: mark-pop .6s .15s both; }
 @keyframes mark-pop { from { opacity: 0; transform: scale(.6) rotate(-12deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
 
@@ -160,6 +159,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   color: var(--ink);
   box-shadow: 0 30px 70px rgba(0, 0, 0, .4);
 }
+.auth-modal:focus { outline: none; }
 .auth-modal::before {
   position: absolute; top: 0; left: -35%; width: 35%; height: 3px; content: '';
   background: linear-gradient(90deg, transparent, var(--accent), var(--amber), transparent);
@@ -191,9 +191,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 }
 @keyframes pill-in { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .auth-form { display: grid; gap: 16px; }
-.auth-form label { display: grid; gap: 8px; color: var(--muted); font-size: 13.5px; font-weight: 700; animation: field-reveal .35s both; }
-.auth-form label:nth-child(2) { animation-delay: .05s; }
-.auth-form label:nth-child(3) { animation-delay: .1s; }
+.auth-field { display: grid; gap: 8px; animation: field-reveal .35s both; }
+.auth-field > label { color: var(--muted); font-size: 13.5px; font-weight: 700; }
+.auth-field:nth-child(2) { animation-delay: .05s; }
+.auth-field:nth-child(3) { animation-delay: .1s; }
 @keyframes field-reveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .auth-form input {
   height: 48px;
@@ -209,9 +210,18 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .auth-form input:focus { outline: none; border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px rgba(46, 230, 171, .16); }
 .auth-form input::placeholder { color: var(--muted); font-weight: 500; opacity: .75; }
 .password-field { position: relative; display: block; }
-.password-field input { width: 100%; padding-right: 46px; }
-.password-toggle { position: absolute; top: 50%; right: 10px; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; color: var(--muted); background: transparent; transform: translateY(-50%); }
+/* Right padding must clear the toggle (10px inset + 36px button) plus a gap,
+   otherwise the long placeholder and typed dots render underneath the eye icon. */
+.password-field input { width: 100%; padding-right: 56px; }
+.password-toggle {
+  position: absolute; top: 50%; right: 6px; z-index: 1;
+  display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+  border: 0; border-radius: 9px; color: var(--muted); background: transparent;
+  transform: translateY(-50%);
+  transition: color .18s ease, background .18s ease, transform .18s ease;
+}
 .password-toggle:hover, .password-toggle:focus-visible { color: var(--accent); background: var(--accent-soft); }
+.password-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .auth-submit {
   width: 100%;
   margin-top: 2px;
@@ -1269,6 +1279,12 @@ footer span { margin: 0 8px; }
   .auth-overlay { padding: 12px; align-items: flex-start; }
   .auth-modal { max-height: calc(100dvh - 24px); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 22px 18px; }
   .auth-header h3 { font-size: 24px; }
+  /* Comfortable thumb target, and a shorter placeholder so the eye button is
+     never buried under the label text on narrow screens. */
+  .password-toggle { width: 40px; height: 40px; right: 4px; }
+  .password-field input { padding-right: 60px; }
+  .auth-form input { font-size: 16px; }
+  .auth-form { gap: 14px; }
 }
 .history-table { display: grid; gap: 2px; max-height: 330px; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
 .history-head, .history-row { display: grid; grid-template-columns: 1.3fr 2fr 120px 90px; gap: 12px; align-items: center; padding: 11px 12px; }
@@ -1466,9 +1482,13 @@ button:active,
 .auth-button:active,
 .primary-button:active { transform: scale(.96); }
 
+/* The global `button:active { transform: scale(.96) }` rule above would drop the
+   toggle's translateY(-50%) and shove the eye button out of the field on every
+   tap. Declared here so it wins on source order as well as specificity. */
+.password-toggle:active { transform: translateY(-50%) scale(.9); }
+
 .pdf-remove-button, .merge-move button, .merge-index { width: 34px; height: 34px; }
 .icon-button { min-width: 42px; min-height: 42px; }
-.password-toggle { width: 36px; height: 36px; }
 .aspect-toggle input { width: 18px; height: 18px; }
 .ws-controls button { height: 36px; }
 .ws-thumb { min-height: 132px; }
